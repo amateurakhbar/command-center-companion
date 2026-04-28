@@ -5,6 +5,7 @@ import { TaskRow, isDueToday, isOverdue } from "@/lib/tasks";
 import { TaskRowItem } from "@/components/tasks/TaskRowItem";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { BreakDownDialog } from "@/components/tasks/BreakDownDialog";
+import { KillTaskDialog } from "@/components/tasks/KillTaskDialog";
 import { QuickAdd } from "@/components/tasks/QuickAdd";
 
 type Mode = { kind: "edit"; task: TaskRow } | { kind: "create" } | null;
@@ -33,9 +34,15 @@ export default function Today() {
       .sort(sortForToday);
     const doNowIds = new Set(doNow.map((t) => t.id));
 
-    // Overdue: status NOT IN (done, killed) AND due_at < now
+    // Overdue: status NOT IN (done, killed, waiting) AND due_at < now
     const overdue = live
-      .filter((t) => t.status !== "done" && t.status !== "killed" && isOverdue(t.due_at))
+      .filter(
+        (t) =>
+          t.status !== "done" &&
+          t.status !== "killed" &&
+          t.status !== "waiting" &&
+          isOverdue(t.due_at)
+      )
       .filter((t) => !doNowIds.has(t.id))
       .sort(sortForToday);
 
