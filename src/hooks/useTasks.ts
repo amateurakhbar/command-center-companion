@@ -30,10 +30,30 @@ export function useTasks() {
   });
 }
 
-export function useTaskMutations() {
+const TRASH_KEY = ["tasks", "trash"] as const;
+
+export function useDeletedTasks() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: TRASH_KEY,
+    enabled: !!user,
+    queryFn: async (): Promise<TaskRow[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
   const qc = useQueryClient();
   const { user } = useAuth();
-  const invalidate = () => qc.invalidateQueries({ queryKey: KEY });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: KEY });
+    qc.invalidateQueries({ queryKey: TRASH_KEY });
+  };
 
   const create = useMutation({
     mutationFn: async (input: Omit<TaskInsert, "user_id">) => {
