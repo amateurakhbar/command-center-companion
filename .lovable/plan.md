@@ -1,141 +1,201 @@
-# AB Command Center — Phased MVP Plan
+# AB Command Center — UX Specification
 
-Ship a working manual dashboard first. Layer in Telegram, AI, reminders, and voice only after each prior phase is genuinely useful.
-
----
-
-## Phase 1 — Manual Dashboard & Database
-
-The whole app, minus automation. If this phase is good enough, you'd already use it daily.
-
-**Build**
-- Auth: single user, email/password (Supabase Auth).
-- Tables (with RLS):
-  - `tasks` — `id, user_id, title, notes, category ('job'|'networking'|'meeting'|'prep'|'general'), status ('open'|'done'|'delayed'|'killed'|'broken_down'), priority, due_at, parent_task_id, company, person_name, link, created_at, completed_at`
-  - `job_applications` — `id, user_id, company, role, location, link, status ('saved'|'applied'|'interviewing'|'offer'|'closed'), applied_at, notes`
-  - `people` — `id, user_id, name, role, company, channel, handle, last_contact_at, next_followup_at, notes`
-- Pages:
-  1. **Today** — today's + overdue tasks, grouped by category, quick-add input.
-  2. **All Tasks** — filter by status/category/due.
-  3. **Jobs** — simple table of applications with status dropdown.
-  4. **People** — contacts with "last contact" and "next follow-up" fields.
-  5. **Settings** — profile, timezone (stored for later phases).
-- Task actions: Done, Delay (pick new date), Kill, Break down (creates child tasks via a small modal).
-- Quick-add form: title + category + optional due date.
-
-**Don't build yet**
-- Telegram, AI parsing, reminders, daily briefing, kanban, analytics, multi-user, mobile app, notifications of any kind.
-
-**Why it matters**
-- Forces the data model to be real before automation.
-- Gives you immediate value even if every later phase slips.
-- Every later phase just writes into these same tables.
-
-**Success looks like**
-- You manually log a day's tasks, jobs, and contacts in under 5 minutes.
-- You actually open the dashboard the next morning and work from it.
+A personal operating system for execution. Dark, executive, mobile-first. No confetti, no streak emojis, no playful illustrations. Density and speed over decoration.
 
 ---
 
-## Phase 2 — Telegram Text Capture
+## Global Design Language
 
-Get messages from your phone into the system. No AI yet — text becomes a task with the message as the title.
+- **Theme**: Near-black background (`#0A0B0D`), surface (`#14161A`), 1px hairline borders (`#23262C`). High-contrast off-white text. Single accent (cool electric blue or amber) used sparingly for primary action and "due today".
+- **Typography**: Display = a precise grotesk (e.g. Space Grotesk / Sora). Body = neutral sans (Inter Tight / Geist). Monospace for numbers and timestamps.
+- **Status colors** (muted, not neon): open=neutral, due-today=accent, overdue=red, done=dim green, delayed=amber, killed=gray strikethrough, drafted=violet.
+- **Density**: Tight rows on desktop, comfortable taps on mobile (48px min touch). No card shadows; rely on hairlines.
+- **Motion**: 120ms fades and slides only. No bounces. No celebratory animation.
+- **Numbers everywhere**: counts in headers, last-touched timestamps on rows, "x days idle" badges.
 
-**Build**
-- Connect Telegram connector.
-- `telegram-poll` edge function + pg_cron (every minute, 55s long-poll).
-- `telegram_bot_state` + `raw_messages` tables.
-- Allowlist: only your `chat_id` (set in Settings).
-- Each new message → insert one task with `title = message text`, `category = 'general'`, `status = 'open'`.
-- Bot replies: "Captured ✅ — edit in dashboard."
-- Inbox page in dashboard: raw messages + linked task, with an "edit task" shortcut.
-
-**Don't build yet**
-- AI parsing, multi-task extraction, inline buttons, callbacks, rich replies, voice notes.
-
-**Why it matters**
-- Removes the friction of opening the dashboard to capture.
-- Proves the Telegram pipeline end-to-end before adding AI on top.
-
-**Success looks like**
-- You message the bot from anywhere; the task shows up in Today within ~1 minute.
-- Zero capture friction during the day.
+**Global shell**
+- Top bar: page title (left), global quick-add (`+` opens a one-line input from anywhere, `⌘K`), date/timezone (right).
+- Bottom nav on mobile: Today · Tasks · Jobs · People · More. Sidebar on desktop with same items + Meetings, Overdue, Score, Settings.
+- Quick-add accepts free text now; later it routes through the AI parser.
 
 ---
 
-## Phase 3 — AI Task Parser
+## 1. Today
 
-Turn messy text into structured tasks.
+**Purpose** — The single screen you open in the morning and live in all day. What's on fire, what's next, what to ignore.
 
-**Build**
-- `parse-message` edge function called after each `raw_messages` insert.
-- Lovable AI Gateway, `google/gemini-3-flash-preview`, tool-calling schema returning 1+ tasks: `title, category, priority, due_at, company, person_name`.
-- System prompt resolves relative dates ("tomorrow morning") using user timezone.
-- Bot reply summarizes the parsed task(s) and includes inline buttons: Confirm / Cancel.
-- Inbox page shows raw → parsed mapping with a "reparse" button.
+**Sections**
+1. **Header strip** — Date, day of week, 3 stat tiles: `Open today`, `Overdue`, `Done today`.
+2. **Now** — Top 3 tasks for the day (manual pin or earliest due). Large rows, primary action visible.
+3. **Today's tasks** — Grouped collapsible sections: Jobs · Networking · Meetings · Prep · General. Count beside each header.
+4. **Coming up** — Next 48h preview, collapsed by default.
+5. **Quick capture** — Persistent input pinned to bottom of content area.
 
-**Don't build yet**
-- Reminders, escalation, daily briefing, voice, multi-turn clarifications.
+**Data per row** — title · category icon · due time · company/person chip · idle days (if applicable).
 
-**Why it matters**
-- One sentence → multiple correctly-categorized tasks with due dates.
-- This is the core "magic" of the product.
+**Actions** — Done · Delay (popover: +1h, tonight, tomorrow, pick) · Kill · Break down · Open detail.
 
-**Success looks like**
-- "Follow up with Hamza tomorrow morning about Ektis and apply to IQVIA Riyadh by Friday" creates 2 tasks, correct categories, correct dates, on the first try ≥80% of the time.
+**Filters** — Category chips (toggle on/off). No other filters here; this is the focused view.
+
+**Mobile** — Single column. Stat tiles become a horizontal scroll strip. Row swipe: left = Done, right = Delay. Long-press = full action sheet.
 
 ---
 
-## Phase 4 — Reminder Engine
+## 2. Tasks
 
-Stop letting things drop.
+**Purpose** — The full backlog. Search, slice, bulk-act.
 
-**Build**
-- `next_nudge_at` + `snooze_count` columns on `tasks`.
-- `send-nudges` edge function + pg_cron every 5 minutes.
-- Cadence: due−24h, due−2h, then every 6h overdue, max 4 nudges → auto-flag "stale".
-- Quiet hours from Settings.
-- Telegram nudge with inline buttons: Done / Snooze 1h / Snooze tomorrow / Kill / Break down.
-- Daily briefing at user's chosen time: today's focus + overdue count.
+**Sections**
+1. **Filter bar** — Status · Category · Due range · Company · Person · Has-link · text search.
+2. **Saved views** (chips) — Open, This week, Overdue, Stale (>7d idle), Killed, Done.
+3. **Table/list**
 
-**Don't build yet**
-- Voice, email/calendar ingestion, smart prioritization beyond simple rules, web push.
+**Columns (desktop)** — Title · Category · Status · Due · Company · Person · Updated.
+**Mobile row** — Title (line 1) + meta row (category · due · status pill).
 
-**Why it matters**
-- Without nudges, tasks rot. This is what turns the app into a true "command center".
+**Actions** — Single: Done/Delay/Kill/Break down/Edit. Bulk: select-all in current filter, then change status or category.
 
-**Success looks like**
-- You routinely close tasks straight from Telegram nudges.
-- Overdue count trends down week over week.
+**Filters** — Multi-select chips, persisted per session. Sort: due asc (default), recently updated, idle longest.
+
+**Mobile** — List view only, sticky filter bar collapses to a single "Filters (3)" button opening a sheet. Swipe actions identical to Today.
 
 ---
 
-## Phase 5 — Voice Notes & Advanced Integrations
+## 3. Job Pipeline
 
-Capture without typing; pull in external context.
+**Purpose** — See every role you're chasing and what state it's in.
 
-**Build (pick what you actually need)**
-- Telegram voice notes → download via gateway → transcribe (Whisper or Gemini audio) → feed into Phase 3 parser.
-- Optional: Google Calendar connector to auto-create "prep" tasks before meetings.
-- Optional: Gmail connector to detect recruiter emails and create follow-up tasks.
-- Optional: weekly review summary (AI-generated).
+**Sections**
+1. **Pipeline stats** — Saved · Applied · Interviewing · Offer · Closed (counts + this-week deltas).
+2. **Pipeline view** — Kanban on desktop (5 columns), vertical stacked sections on mobile.
+3. **Stale shelf** — Applications with no movement in 14+ days, surfaced at top.
+4. **Detail drawer** — Right-side drawer when a card is tapped: company, role, location, link, applied_at, notes, related tasks (auto-linked by company).
 
-**Don't build yet**
-- Anything not directly making capture or follow-through easier.
-- Mobile app, multi-user, public sharing.
+**Card data** — Company · Role · Location · Days since last update · Next task chip (if any).
 
-**Why it matters**
-- Voice is the lowest-friction capture mode.
-- Calendar/Gmail close the loop on inputs you don't manually type.
+**Actions** — Move stage (drag on desktop, dropdown on mobile) · Add follow-up task · Mark closed (with reason: rejected/withdrew/ghosted/accepted) · Open link.
 
-**Success looks like**
-- You can dump a 30-second voice memo after a call and get clean tasks with the right person/company tagged.
+**Filters** — Stage · Location · Source · Date range. Search: company/role.
+
+**Mobile** — Stage tabs across the top, swipe between stages. Cards full-width. "Add application" FAB bottom-right.
 
 ---
 
-## Cross-phase rules
+## 4. Networking Pipeline
 
-- Each phase ships independently and is usable on its own.
-- No phase blocks on the next; if Phase 3 is delayed, Phase 2 still works (raw text → task).
-- Same `tasks` table throughout — later phases only add columns and writers, never restructure.
-- Always single-user, allowlisted, until explicitly outgrown.
+**Purpose** — Don't let people go cold.
+
+**Sections**
+1. **Health stats** — Contacts touched this week · Overdue follow-ups · New contacts this month.
+2. **Needs follow-up** — People where `next_followup_at <= today` or no contact in 30+ days. Sorted by most overdue.
+3. **All people** — Compact list with last-touch and next-follow-up.
+4. **Detail drawer** — Name, role, company, channel + handle, notes, contact history (timeline of related tasks/messages), set next follow-up.
+
+**Row data** — Name · Role @ Company · Last contact (relative: "12d ago") · Next follow-up · Channel icon.
+
+**Actions** — Mark contacted (sets last_contact_at = now, prompts for next follow-up date) · Snooze · Create follow-up task · Edit · Archive.
+
+**Filters** — Channel · Company · Status (active/cold/archived) · search by name.
+
+**Mobile** — Same layout, drawer becomes full-screen sheet. Primary CTA per row: "Mark contacted".
+
+---
+
+## 5. Meetings
+
+**Purpose** — Prep before, capture after.
+
+**Sections**
+1. **Today's meetings** — Time-ordered list with prep status indicator.
+2. **Upcoming (next 7 days)** — Grouped by day.
+3. **Needs prep** — Meetings <24h away with no prep tasks linked.
+4. **Recent (last 7 days)** — For follow-up logging.
+5. **Detail view** — Time, attendees (linked to People), agenda notes, prep checklist (child tasks), post-meeting notes, "create follow-up" button.
+
+**Row data** — Time · Title · Attendee chips · Prep status (none / partial / ready) · Post-meeting note status.
+
+**Actions** — Add prep item (creates child task) · Mark prepped · Log notes · Generate follow-up tasks (manual now, AI later) · Reschedule · Cancel.
+
+**Filters** — Date range · Attendee · Has-prep · Has-notes.
+
+**Mobile** — Day-grouped list. Tap opens full-screen detail with tabs: Prep · Notes · Follow-ups.
+
+---
+
+## 6. Overdue
+
+**Purpose** — A blunt accountability screen. Everything you're behind on, ranked by how badly.
+
+**Sections**
+1. **Counters** — Total overdue · Overdue >7d · Stale (no action 14d+).
+2. **Triage list** — Sorted by days overdue desc. Each row shows the cost of inaction inline.
+3. **Bulk decision bar** — Sticky bottom bar appears when items selected: Done · Delay all · Kill all · Reassign date.
+
+**Row data** — Title · Days overdue (large, red) · Category · Last touched · Quick actions inline.
+
+**Actions** — For each: Done · Delay (with required new date) · Kill (with one-tap reason) · Break down · Convert to "someday" (status=delayed, no date).
+
+**Filters** — Category · Days overdue bucket (1-3 / 4-7 / 8-14 / 15+) · Has-due-date vs no-date.
+
+**Mobile** — Same list, swipe-left = Kill (confirm), swipe-right = Delay sheet. Bulk select via long-press.
+
+**UX intent** — This page should feel uncomfortable on purpose. No empty-state cheerleading; if empty, just: "Nothing overdue."
+
+---
+
+## 7. Execution Score
+
+**Purpose** — One honest number that reflects whether you're actually executing. Not a game — a mirror.
+
+**Score model (simple, transparent)**
+- Daily score = `done_today / (done_today + overdue_added_today + ignored_nudges_today)`, expressed 0–100.
+- Weekly score = trailing 7-day average.
+- Shown as a number, not a badge.
+
+**Sections**
+1. **Headline** — Today's score, week score, 4-week trend (sparkline).
+2. **Breakdown** — Tasks closed · Tasks killed · Tasks delayed · Tasks stale · Avg time-to-close.
+3. **By category** — Same metrics split across Jobs / Networking / Meetings / Prep.
+4. **Patterns** — "You close 70% of Job tasks but only 30% of Networking." Plain text insights, no graphics needed in v1.
+5. **History** — 30-day calendar heatmap of done counts (one muted color, opacity by intensity — no rainbow).
+
+**Data shown** — Numbers and a single sparkline. No badges, levels, streaks, or trophies. A subtle "current streak: 4 days closing ≥3 tasks" line is the only streak concept allowed.
+
+**Actions** — Drill into any metric → filtered Tasks view. Toggle period: 7d / 30d / 90d.
+
+**Filters** — Period · Category.
+
+**Mobile** — Score and sparkline above fold. Breakdown stacks. Heatmap horizontally scrollable.
+
+---
+
+## 8. Settings
+
+**Purpose** — Configure the system. Boring on purpose.
+
+**Sections**
+1. **Profile** — Name, email, timezone.
+2. **Telegram** (placeholder until Phase 2) — Connect bot, paste/verify chat_id, test message button.
+3. **Notifications & Quiet hours** (Phase 4) — Daily briefing time, quiet hours start/end, max nudges per task.
+4. **Categories** — Rename or reorder the 5 fixed categories (no add/remove in v1).
+5. **Defaults** — Default due time, default priority, week start day.
+6. **Data** — Export CSV (tasks, jobs, people), wipe completed >90d.
+7. **Appearance** — Accent color (small swatch picker), density (comfortable/compact).
+8. **About** — Version, build, signed-in account, sign out.
+
+**Actions** — Save inline per section (no global Save button). Destructive actions require typed confirmation.
+
+**Mobile** — Single-column list of sections, each opens a sub-screen. No accordions on mobile.
+
+---
+
+## Cross-cutting UX rules
+
+- **One quick-add everywhere** — `⌘K` on desktop, persistent bottom input on mobile. Same field, same parser later.
+- **Empty states are blunt** — "No tasks." Not "🎉 You're all caught up!"
+- **No modals for routine actions** — Use bottom sheets on mobile, popovers on desktop. Modals only for destructive confirms.
+- **Optimistic updates** — Status changes apply instantly; revert quietly on failure with a single toast.
+- **Keyboard first on desktop** — `J/K` navigate rows, `D` done, `X` kill, `S` snooze, `E` edit, `/` search.
+- **No dashboards-of-dashboards** — Today is the home. Score is a check-in, not a destination.
+- **Time is always explicit** — Show absolute date on hover/tap; show relative ("3d") in row.
+- **No notification dots in nav** — Use the Overdue counter on the Overdue tab only.
