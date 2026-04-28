@@ -1,71 +1,101 @@
-## Phase 1B QA pass
+# Phase 2 Telegram Text Capture — Staged Build
 
-Static + parser-level checks ran clean on most criteria. Three real defects against the spec, plus one missing capability.
+## Reality check
 
-### Pass / fail per criterion
+Phase 2 has **not** been built yet. The codebase only contains schema scaffolding from Phase 1:
+- `profiles.telegram_user_id` and `profiles.telegram_chat_id` columns
+- `task_source` enum includes `'telegram'`
+- `raw_inputs` table with `source = 'telegram'` allowed
 
-| # | Criterion | Status |
-|---|-----------|--------|
-| 1 | Quick-add creates tasks | Pass — `useTaskMutations.create` writes `user_id` and parsed fields. |
-| 2 | Regex hints (`!high/!med/!medium/!low`, `#job/#networking/#followup/#meeting/#interview/#admin/#personal`) | Pass — verified all 7 sample inputs parse correctly. |
-| 3 | Today sections (Do Now / Due Today / Overdue / Waiting) | Pass — filters and dedup match the patch. |
-| 4 | Waiting tasks only in Waiting section | Pass — Due Today excludes `status = waiting`; Do Now requires `in_progress`; Overdue excludes done/killed only, but waiting tasks have no overdue path because they appear in Waiting and we should also exclude them from Overdue. **Minor risk** — see Bug D. |
-| 5 | Overdue page shows only active overdue | Mostly pass — filters `status NOT IN (done, killed)`; same Bug D risk: a `waiting` task with a past due_at would show up here. |
-| 6 | Done sets `status=done` and `completed_at` | Pass. |
-| 7 | Delay updates `due_at`, `snoozed_until`, `delay_count`, `last_delayed_at` | Pass. |
-| 8 | Kill requires a reason | **FAIL — Bug A.** Dropdown calls `actions.kill(task)` with no reason. Drawer also lets `status=killed` save with no reason. |
-| 9 | Break down creates child with `parent_task_id` | Pass. |
-| 10 | Reopen clears `completed_at`, `killed_at`, `killed_reason`, **and `deleted_at` where needed** | **Partial FAIL — Bug B.** Reopen does not clear `deleted_at`. |
-| 11 | Undo for done/delay/kill/waiting/soft-delete | Pass on done/delay/waiting/soft-delete. Kill undo will work once Bug A fix routes through the same toast helper. |
-| 12 | Deleted tasks viewable + recoverable | **FAIL — Bug C.** `useTasks()` filters `deleted_at IS NULL`; no Trash UI exists. |
-| 13 | Mobile 375px no horizontal scroll | Will verify in browser after fixes. |
-| 14 | No out-of-scope modules built | Pass — Jobs/People/Score still scaffolds; no Telegram/AI/reminders/voice/Gmail/Calendar/scraping/swipe/keyboard shortcuts. |
+There is **no** Settings UI, **no** `supabase/functions/` directory, **no** `telegram-webhook`, **no** `/connect` flow, and no command handlers. Your QA pass therefore can't run yet — we need to build first, then QA.
 
-### Bugs
+We'll build in three stages so each one is small enough to debug end-to-end. This plan covers **Stage 1 only**. Stages 2 and 3 will be planned after Stage 1 is verified working.
 
-- **Bug A — Kill has no reason prompt.** Spec criterion 8.
-- **Bug B — Reopen does not clear `deleted_at`.** Spec criterion 10.
-- **Bug C — No Trash view.** Spec criterion 12. Soft-deleted tasks are invisible and unrecoverable.
-- **Bug D — Waiting tasks with past `due_at` leak into Overdue section + Overdue page.** Spec criterion 4 says waiting tasks should only appear in the Waiting accordion on Today; criterion 5 says Overdue page shows "only active overdue tasks" — `waiting` is not active. Easy filter tightening.
-- **Bug E (minor) — Drawer can set `status = killed` without a reason.** Same root cause as Bug A. Will reuse the same dialog flow.
+---
 
-### Fix plan
+## Before we write any code: create your Telegram bot
 
-1. **Add `KillTaskDialog`** (`src/components/tasks/KillTaskDialog.tsx`) — required-text textarea, calls `useTaskMutations.kill(task, reason)`, fires the same Undo toast.
-2. **Wire kill through the dialog**:
-   - `TaskRowItem` — replace inline `actions.kill(task)` with opening the dialog (lift state to a parent or local).
-   - `Today.tsx`, `Tasks.tsx`, `Overdue.tsx` — manage one `killTask` state alongside `breakDownTask` and render `<KillTaskDialog>`.
-   - `TaskDrawer` — when user changes status to `killed` in the drawer, route through the same dialog instead of saving silently. If the task already has a `killed_reason`, allow re-saving without prompting.
-3. **Fix Reopen to also clear `deleted_at`**: update `useTaskMutations.reopen` patch to include `deleted_at: null`. Snapshot already captured for undo correctness — extend snapshot to include `deleted_at` too.
-4. **Tighten Today's Overdue + Overdue page filter** to also exclude `status = waiting` (Bug D). Waiting tasks already render in the Waiting section regardless of due_at.
-5. **Add a Trash view** without inflating scope:
-   - New hook `useDeletedTasks()` (read-only query with `.not("deleted_at", "is", null)`).
-   - New component `<TrashSheet>` (sheet from the right) listing deleted tasks with a "Restore" button per row that calls `update({ deleted_at: null })` and triggers the existing query invalidation. Restore toast confirms.
-   - Trigger: a small "Trash (n)" link/button at the bottom of the **Settings** page (cheapest place; avoids new sidebar entry, stays within Phase 1B scope).
-6. Verify in the browser at desktop and 375px mobile after fixes (criterion 13).
+You'll need to do this once in the Telegram app. I can't do it for you.
 
-### Out of scope (do NOT touch)
+1. Open Telegram and search for **@BotFather**. Start a chat.
+2. Send `/newbot`.
+3. BotFather asks for a **display name** — type anything (e.g. `AB Command Center`).
+4. BotFather asks for a **username** — must end in `bot` and be unique (e.g. `ab_command_bot` or `abcc_yourname_bot`). If taken, try another.
+5. BotFather replies with a message containing a line like:
+   `Use this token to access the HTTP API: 1234567890:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+   That long string **is** your bot token. Copy it.
+6. (Optional but recommended) Send `/setdescription` and `/setabouttext` to BotFather to brand the bot.
 
-Jobs UI, People UI, Score, Telegram, AI parser, reminders, voice, Gmail, Calendar, scraping, swipe gestures, keyboard shortcuts, bulk delay/kill/category, job/person linking UI.
+When you confirm you've done this, I'll prompt you to add two secrets:
+- `TELEGRAM_BOT_TOKEN` — the token from step 5
+- `TELEGRAM_WEBHOOK_SECRET` — any random string you make up (I'll give you one if you want); this proves incoming webhook calls are really from Telegram
 
-### Files touched
+You will **never** paste these into chat or code — they're stored as backend secrets and only the Edge Function can read them.
 
-- `src/hooks/useTasks.ts` — extend `reopen` patch + snapshot to include `deleted_at`; add `useDeletedTasks()` query.
-- `src/components/tasks/KillTaskDialog.tsx` — new.
-- `src/components/tasks/TrashSheet.tsx` — new.
-- `src/components/tasks/TaskRowItem.tsx` — kill menu item now calls `onKill?(task)` (callback prop) instead of `actions.kill`.
-- `src/components/tasks/TaskDrawer.tsx` — if status changes to `killed`, defer save and surface kill dialog (or require reason inline before save).
-- `src/pages/Today.tsx`, `src/pages/Tasks.tsx`, `src/pages/Overdue.tsx` — render `<KillTaskDialog>`, wire `onKill`. Tighten `status !== "waiting"` in Overdue filters.
-- `src/pages/Settings.tsx` — add "Trash" trigger that opens `<TrashSheet>`.
+---
 
-### After fixes
+## Stage 1 scope (this build)
 
-I'll launch the preview at desktop + 375px to confirm:
-- Quick-add + parser
-- Section dedup
-- Kill flow blocks empty reason
-- Soft-delete then restore from Trash
-- Reopen on a deleted+done task brings it back live
-- No horizontal scroll at 375px
+Goal: prove the connection pipeline works. After Stage 1, you'll be able to link your Telegram account to your app account and see `/start`, `/help`, and `/connect` replies. No task commands yet.
 
-Then I'll report the final summary (bugs found, fixed, anything still broken, Phase 1C readiness).
+### What gets built
+
+**1. Edge Function: `telegram-webhook`** (`supabase/functions/telegram-webhook/index.ts`)
+- Public function (`verify_jwt = false`) — Telegram has no Supabase JWT
+- Validates `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_WEBHOOK_SECRET`; rejects with 401 if mismatch
+- Parses incoming update, extracts `chat_id`, `from.id` (telegram_user_id), `text`, `message_id`
+- Handles malformed payloads safely (try/catch, returns 200 to Telegram so it doesn't retry-storm)
+- Uses `SUPABASE_SERVICE_ROLE_KEY` server-side only
+- Implements three commands for Stage 1:
+  - `/start` — if user is connected → "AB Command Center is connected. Send /help for commands." If not → "Generate a connection code in AB Command Center Settings, then send /connect CODE."
+  - `/help` — lists Stage 1 commands plus a "more coming soon" note
+  - `/connect CODE` — looks up `settings.preferences->telegram_link` across all users, validates code + expiry, updates that user's `profiles.telegram_user_id` + `telegram_chat_id`, clears the code, replies "Connected. AB Command Center is ready."
+- Replies to Telegram via `sendMessage` using `TELEGRAM_BOT_TOKEN` (direct Bot API, not connector — webhook-based architecture)
+- Logs errors to console without leaking secrets
+
+**2. Settings UI: Telegram section** (edit `src/pages/Settings.tsx`)
+- New card: "Telegram"
+- If `profiles.telegram_user_id` is set: show "Connected" with the user/chat IDs and a **Disconnect** button (clears both columns + any pending code)
+- If not connected: show **Generate connection code** button
+  - Generates 8-char uppercase code, stores in `settings.preferences = { telegram_link: { code, expires_at } }` with 15-min expiry
+  - Displays the code prominently with copy button
+  - Shows instructions: "Open Telegram, message @your_bot_username, and send `/connect CODE`"
+  - Shows countdown of remaining validity
+- No bot token, no webhook secret, no service role anywhere in frontend
+
+**3. Webhook registration**
+After deploy, I'll register the webhook with Telegram by calling `setWebhook` from a one-shot script (or guide you to paste a curl command — your choice). The URL will be `https://didfheewjogzulhjnmec.supabase.co/functions/v1/telegram-webhook` with the secret token header.
+
+### Technical details
+
+- **Code generation**: 8 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no ambiguous chars). Stored as `{ code: "X7K2M4PQ", expires_at: "2026-04-28T21:00:00Z" }` in `settings.preferences.telegram_link`.
+- **Connect lookup**: Edge Function queries `settings` for `preferences->'telegram_link'->>'code' = $1` and `(preferences->'telegram_link'->>'expires_at')::timestamptz > now()`. Updates `profiles` for that user_id, then clears the `telegram_link` key.
+- **Disconnect**: clears `telegram_user_id`, `telegram_chat_id`, and `settings.preferences.telegram_link`.
+- **No new tables / no migration needed** for Stage 1 — everything fits in existing schema.
+
+### What's explicitly NOT in Stage 1
+`/add`, `/today`, `/overdue`, `/done`, `/delay`, `/waiting`, `/reopen`, raw_inputs logging of telegram messages, tag/date parsing, short ID resolution. All of that is Stage 2.
+
+---
+
+## Stage 2 (next, after Stage 1 is verified)
+- `raw_inputs` logging for every connected message
+- `/add` with priority + category tag parsing and simple date parser (today/tomorrow/tonight/in Nh/9am/Friday) using profile timezone
+- `/today` and `/overdue` with short-ID display
+
+## Stage 3 (last)
+- `/done`, `/delay`, `/waiting`, `/reopen` with short-ID lookup
+- Full QA pass against your original 14-part checklist
+
+---
+
+## What I need from you to start Stage 1
+
+1. Confirm you've created the bot in @BotFather and have the token ready (or say "walk me through it" and I'll wait).
+2. Approve this plan.
+
+Once approved, I'll:
+1. Ask you to add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` as backend secrets.
+2. Build the Edge Function and Settings UI.
+3. Help you register the webhook with Telegram.
+4. Walk you through testing `/start` → generate code → `/connect CODE` → `/start` again → `/help`.
