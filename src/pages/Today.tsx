@@ -154,6 +154,7 @@ function Section({
   tone,
   onOpen,
   onBreakDown,
+  onKill,
 }: {
   title: string;
   hint: string;
@@ -161,6 +162,7 @@ function Section({
   tone: keyof typeof TONE_CLASS;
   onOpen: (t: TaskRow) => void;
   onBreakDown: (t: TaskRow) => void;
+  onKill: (t: TaskRow) => void;
 }) {
   if (tasks.length === 0) return null;
   return (
@@ -173,7 +175,7 @@ function Section({
       </div>
       <div className="space-y-1.5">
         {tasks.map((t) => (
-          <TaskRowItem key={t.id} task={t} onOpen={onOpen} onBreakDown={onBreakDown} />
+          <TaskRowItem key={t.id} task={t} onOpen={onOpen} onBreakDown={onBreakDown} onKill={onKill} />
         ))}
       </div>
     </section>
