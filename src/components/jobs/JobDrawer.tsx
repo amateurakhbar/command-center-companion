@@ -488,6 +488,46 @@ export function JobDrawer({ mode, onClose }: Props) {
                 )}
               </div>
             )}
+
+            {/* Linked people */}
+            {isEdit && job && (
+              <div className="space-y-2 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <Label>Linked people</Label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setPersonMode({
+                        kind: "create",
+                        defaults: { related_job_id: job.id, company: job.company },
+                      })
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add person
+                  </Button>
+                </div>
+                {peopleLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : linkedPeople.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border bg-surface-1/40 p-4 text-center text-xs text-muted-foreground">
+                    No linked people yet.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {linkedPeople.map((p) => (
+                      <PersonRowItem
+                        key={p.id}
+                        person={p}
+                        onOpen={(person) => setPersonMode({ kind: "edit", person })}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <SheetFooter className="flex-row justify-between sm:justify-between gap-2">
