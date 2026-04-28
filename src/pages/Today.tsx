@@ -24,6 +24,7 @@ export default function Today() {
   const { data: tasks = [], isLoading } = useTasks();
   const [mode, setMode] = useState<Mode>(null);
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
+  const [killTask, setKillTask] = useState<TaskRow | null>(null);
 
   const sections = useMemo(() => {
     const live = tasks.filter((t) => !t.deleted_at);
@@ -100,6 +101,7 @@ export default function Today() {
             tone="primary"
             onOpen={(t) => setMode({ kind: "edit", task: t })}
             onBreakDown={setBreakDownTask}
+            onKill={setKillTask}
           />
           <Section
             title="Overdue"
@@ -108,6 +110,7 @@ export default function Today() {
             tone="destructive"
             onOpen={(t) => setMode({ kind: "edit", task: t })}
             onBreakDown={setBreakDownTask}
+            onKill={setKillTask}
           />
           <Section
             title="Due today"
@@ -116,6 +119,7 @@ export default function Today() {
             tone="warning"
             onOpen={(t) => setMode({ kind: "edit", task: t })}
             onBreakDown={setBreakDownTask}
+            onKill={setKillTask}
           />
           <Section
             title="Waiting"
@@ -124,12 +128,14 @@ export default function Today() {
             tone="info"
             onOpen={(t) => setMode({ kind: "edit", task: t })}
             onBreakDown={setBreakDownTask}
+            onKill={setKillTask}
           />
         </div>
       )}
 
       <TaskDrawer mode={mode} onClose={() => setMode(null)} />
       <BreakDownDialog task={breakDownTask} onClose={() => setBreakDownTask(null)} />
+      <KillTaskDialog task={killTask} onClose={() => setKillTask(null)} />
     </div>
   );
 }
