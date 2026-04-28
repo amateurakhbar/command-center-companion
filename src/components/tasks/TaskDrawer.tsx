@@ -87,6 +87,12 @@ export function TaskDrawer({ mode, onClose }: Props) {
       toast.error("Title is required");
       return;
     }
+    // Block silent kill via the drawer — require a reason. Reuse the dedicated dialog
+    // by closing here and surfacing an error; the user kills via the menu's Kill… option.
+    if (mode?.kind === "edit" && status === "killed" && mode.task.status !== "killed" && !mode.task.killed_reason) {
+      toast.error("Use the Kill… action to set a reason");
+      return;
+    }
     setSaving(true);
     try {
       if (mode?.kind === "edit") {

@@ -30,10 +30,32 @@ export function useTasks() {
   });
 }
 
+const TRASH_KEY = ["tasks", "trash"] as const;
+
+export function useDeletedTasks() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: TRASH_KEY,
+    enabled: !!user,
+    queryFn: async (): Promise<TaskRow[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export function useTaskMutations() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const invalidate = () => qc.invalidateQueries({ queryKey: KEY });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: KEY });
+    qc.invalidateQueries({ queryKey: TRASH_KEY });
+  };
 
   const create = useMutation({
     mutationFn: async (input: Omit<TaskInsert, "user_id">) => {
@@ -91,10 +113,22 @@ export function useTaskMutations() {
   }
 
   async function reopen(task: TaskRow) {
-    const prev = { status: task.status, completed_at: task.completed_at, killed_at: task.killed_at, killed_reason: task.killed_reason };
+    const prev = {
+      status: task.status,
+      completed_at: task.completed_at,
+      killed_at: task.killed_at,
+      killed_reason: task.killed_reason,
+      deleted_at: task.deleted_at,
+    };
     await update.mutateAsync({
       id: task.id,
-      patch: { status: "to_do", completed_at: null, killed_at: null, killed_reason: null },
+      patch: {
+        status: "to_do",
+        completed_at: null,
+        killed_at: null,
+        killed_reason: null,
+        deleted_at: null,
+      },
     });
     return prev;
   }

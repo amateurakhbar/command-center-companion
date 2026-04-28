@@ -5,6 +5,7 @@ import { TaskRow, isOverdue } from "@/lib/tasks";
 import { TaskRowItem } from "@/components/tasks/TaskRowItem";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { BreakDownDialog } from "@/components/tasks/BreakDownDialog";
+import { KillTaskDialog } from "@/components/tasks/KillTaskDialog";
 import { Button } from "@/components/ui/button";
 import { useTaskActionToasts } from "@/hooks/useTaskActions";
 
@@ -16,6 +17,7 @@ export default function Overdue() {
   const { data: tasks = [], isLoading } = useTasks();
   const [mode, setMode] = useState<Mode>(null);
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
+  const [killTask, setKillTask] = useState<TaskRow | null>(null);
   const actions = useTaskActionToasts();
 
   const overdue = useMemo(() => {
@@ -25,6 +27,7 @@ export default function Overdue() {
           !t.deleted_at &&
           t.status !== "done" &&
           t.status !== "killed" &&
+          t.status !== "waiting" &&
           isOverdue(t.due_at)
       )
       .sort((a, b) => {
@@ -81,6 +84,7 @@ export default function Overdue() {
               task={t}
               onOpen={(task) => setMode({ kind: "edit", task })}
               onBreakDown={setBreakDownTask}
+              onKill={setKillTask}
             />
           ))}
         </div>
@@ -88,6 +92,7 @@ export default function Overdue() {
 
       <TaskDrawer mode={mode} onClose={() => setMode(null)} />
       <BreakDownDialog task={breakDownTask} onClose={() => setBreakDownTask(null)} />
+      <KillTaskDialog task={killTask} onClose={() => setKillTask(null)} />
     </div>
   );
 }

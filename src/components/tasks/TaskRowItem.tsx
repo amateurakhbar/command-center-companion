@@ -17,6 +17,7 @@ type Props = {
   task: TaskRow;
   onOpen: (task: TaskRow) => void;
   onBreakDown?: (task: TaskRow) => void;
+  onKill?: (task: TaskRow) => void;
   selectable?: boolean;
   selected?: boolean;
   onSelectChange?: (next: boolean) => void;
@@ -27,6 +28,7 @@ export function TaskRowItem({
   task,
   onOpen,
   onBreakDown,
+  onKill,
   selectable,
   selected,
   onSelectChange,
@@ -129,13 +131,17 @@ export function TaskRowItem({
                     <Split className="mr-2 h-4 w-4" /> Break down
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => actions.kill(task)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Skull className="mr-2 h-4 w-4" /> Kill
-                </DropdownMenuItem>
+                {onKill && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => onKill(task)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Skull className="mr-2 h-4 w-4" /> Kill…
+                    </DropdownMenuItem>
+                  </>
+                )}
               </>
             )}
             {(isDone || isKilled) && (

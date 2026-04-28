@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon } from "lucide-react";
+import { Settings as SettingsIcon, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { TrashSheet } from "@/components/tasks/TrashSheet";
+import { useDeletedTasks } from "@/hooks/useTasks";
 
 export default function Settings() {
   const { user } = useAuth();
@@ -15,6 +17,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [timezone, setTimezone] = useState("Europe/London");
+  const [trashOpen, setTrashOpen] = useState(false);
+  const { data: deleted = [] } = useDeletedTasks();
 
   useEffect(() => {
     if (!user) return;
@@ -90,6 +94,23 @@ export default function Settings() {
           Save
         </Button>
       </Card>
+
+      <Card className="p-6 bg-surface-1 mt-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Trash</div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              View and restore soft-deleted tasks.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setTrashOpen(true)}>
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+            Open trash{deleted.length > 0 ? ` (${deleted.length})` : ""}
+          </Button>
+        </div>
+      </Card>
+
+      <TrashSheet open={trashOpen} onOpenChange={setTrashOpen} />
     </div>
   );
 }
