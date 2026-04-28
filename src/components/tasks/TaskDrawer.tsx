@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Briefcase, Loader2, Trash2, Users } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   TaskRow,
@@ -25,6 +25,12 @@ import {
   STATUS_LABEL,
 } from "@/lib/tasks";
 import { useTaskMutations } from "@/hooks/useTasks";
+import { JobLinkSelect } from "@/components/jobs/JobLinkSelect";
+import { PersonLinkSelect } from "@/components/people/PersonLinkSelect";
+import { useJob } from "@/hooks/useJobs";
+import { usePerson } from "@/hooks/usePeople";
+import { JobStatusBadge } from "@/components/jobs/JobBadges";
+import { PersonStatusBadge, RelationshipBadge } from "@/components/people/PersonBadges";
 
 type Mode = { kind: "edit"; task: TaskRow } | { kind: "create"; defaults?: Partial<TaskInsert> } | null;
 
@@ -56,8 +62,13 @@ export function TaskDrawer({ mode, onClose }: Props) {
   const [priority, setPriority] = useState<TaskRow["priority"]>("medium");
   const [category, setCategory] = useState<TaskRow["category"]>("admin");
   const [dueLocal, setDueLocal] = useState("");
+  const [relatedJobId, setRelatedJobId] = useState<string | null>(null);
+  const [relatedPersonId, setRelatedPersonId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const { data: relatedJob } = useJob(relatedJobId);
+  const { data: relatedPerson } = usePerson(relatedPersonId);
 
   useEffect(() => {
     if (!mode) return;
@@ -69,26 +80,26 @@ export function TaskDrawer({ mode, onClose }: Props) {
       setPriority(t.priority);
       setCategory(t.category);
       setDueLocal(toLocalInput(t.due_at));
+      setRelatedJobId(t.related_job_id ?? null);
+      setRelatedPersonId(t.related_person_id ?? null);
     } else {
-      setTitle(mode.defaults?.title ?? "");
+      const d = mode.defaults ?? {};
+      setTitle((d.title as string) ?? "");
       setDescription("");
-      setStatus(mode.defaults?.status ?? "to_do");
-      setPriority(mode.defaults?.priority ?? "medium");
-      setCategory(mode.defaults?.category ?? "admin");
-      setDueLocal(toLocalInput(mode.defaults?.due_at as string | null | undefined));
+      setStatus((d.status as TaskRow["status"]) ?? "to_do");
+      setPriority((d.priority as TaskRow["priority"]) ?? "medium");
+      setCategory((d.category as TaskRow["category"]) ?? "admin");
+      setDueLocal(toLocalInput(d.due_at as string | null | undefined));
+      setRelatedJobId((d.related_job_id as string | null) ?? null);
+      setRelatedPersonId((d.related_person_id as string | null) ?? null);
     }
   }, [mode]);
-
-  const linkedJob = isEdit && (mode as any).task.related_job_id;
-  const linkedPerson = isEdit && (mode as any).task.related_person_id;
 
   const save = async () => {
     if (!title.trim()) {
       toast.error("Title is required");
       return;
     }
-    // Block silent kill via the drawer — require a reason. Reuse the dedicated dialog
-    // by closing here and surfacing an error; the user kills via the menu's Kill… option.
     if (mode?.kind === "edit" && status === "killed" && mode.task.status !== "killed" && !mode.task.killed_reason) {
       toast.error("Use the Kill… action to set a reason");
       return;
@@ -103,6 +114,8 @@ export function TaskDrawer({ mode, onClose }: Props) {
           priority,
           category,
           due_at: fromLocalInput(dueLocal),
+          related_job_id: relatedJobId,
+          related_person_id: relatedPersonId,
           completed_at: status === "done" ? mode.task.completed_at ?? new Date().toISOString() : null,
           killed_at: status === "killed" ? mode.task.killed_at ?? new Date().toISOString() : null,
         };
@@ -117,8 +130,8 @@ export function TaskDrawer({ mode, onClose }: Props) {
           priority,
           category,
           due_at: fromLocalInput(dueLocal),
-          related_job_id: defaults.related_job_id ?? null,
-          related_person_id: defaults.related_person_id ?? null,
+          related_job_id: relatedJobId,
+          related_person_id: relatedPersonId,
           parent_task_id: defaults.parent_task_id ?? null,
           source: defaults.source ?? "manual",
         });
@@ -232,22 +245,38 @@ export function TaskDrawer({ mode, onClose }: Props) {
             </div>
           </div>
 
-          {(linkedJob || linkedPerson) && (
-            <div className="rounded-md border border-border bg-surface-2 p-3 space-y-1">
-              <div className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground">Linked</div>
-              {linkedJob && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Briefcase className="h-3.5 w-3.5" /> Job linked
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div className="space-y-2">
+              <Label>Linked job</Label>
+              <JobLinkSelect value={relatedJobId} onChange={setRelatedJobId} />
+              {relatedJob && (
+                <div className="rounded-md border border-border bg-surface-2 px-3 py-2 flex items-center gap-2 text-xs">
+                  <span className="font-semibold truncate">{relatedJob.company}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="truncate">{relatedJob.role_title}</span>
+                  <JobStatusBadge status={relatedJob.status} className="ml-auto" />
                 </div>
               )}
-              {linkedPerson && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Users className="h-3.5 w-3.5" /> Person linked
-                </div>
-              )}
-              <div className="text-[10px] text-muted-foreground/70">Linking UI ships in Phase 2.</div>
             </div>
-          )}
+
+            <div className="space-y-2">
+              <Label>Linked person</Label>
+              <PersonLinkSelect value={relatedPersonId} onChange={setRelatedPersonId} />
+              {relatedPerson && (
+                <div className="rounded-md border border-border bg-surface-2 px-3 py-2 flex items-center gap-2 text-xs flex-wrap">
+                  <span className="font-semibold truncate">{relatedPerson.name}</span>
+                  {relatedPerson.company && (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="truncate">{relatedPerson.company}</span>
+                    </>
+                  )}
+                  <RelationshipBadge type={relatedPerson.relationship_type} />
+                  <PersonStatusBadge status={relatedPerson.status} className="ml-auto" />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <SheetFooter className="flex-row justify-between sm:justify-between gap-2">
