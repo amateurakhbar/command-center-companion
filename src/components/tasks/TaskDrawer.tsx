@@ -109,6 +109,7 @@ export function TaskDrawer({ mode, onClose }: Props) {
         await m.update.mutateAsync({ id: mode.task.id, patch });
         toast.success("Task updated");
       } else {
+        const defaults = (mode as { kind: "create"; defaults?: Partial<TaskInsert> }).defaults ?? {};
         await m.create.mutateAsync({
           title: title.trim(),
           description: description.trim() || null,
@@ -116,6 +117,10 @@ export function TaskDrawer({ mode, onClose }: Props) {
           priority,
           category,
           due_at: fromLocalInput(dueLocal),
+          related_job_id: defaults.related_job_id ?? null,
+          related_person_id: defaults.related_person_id ?? null,
+          parent_task_id: defaults.parent_task_id ?? null,
+          source: defaults.source ?? "manual",
         });
         toast.success("Task created");
       }
