@@ -48,6 +48,8 @@ export function useDeletedTasks() {
     },
   });
 }
+
+export function useTaskMutations() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const invalidate = () => {
