@@ -17,6 +17,7 @@ export default function Overdue() {
   const { data: tasks = [], isLoading } = useTasks();
   const [mode, setMode] = useState<Mode>(null);
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
+  const [killTask, setKillTask] = useState<TaskRow | null>(null);
   const actions = useTaskActionToasts();
 
   const overdue = useMemo(() => {
@@ -26,6 +27,7 @@ export default function Overdue() {
           !t.deleted_at &&
           t.status !== "done" &&
           t.status !== "killed" &&
+          t.status !== "waiting" &&
           isOverdue(t.due_at)
       )
       .sort((a, b) => {
