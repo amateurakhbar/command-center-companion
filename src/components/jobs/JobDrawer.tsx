@@ -55,6 +55,9 @@ import { BreakDownDialog } from "@/components/tasks/BreakDownDialog";
 import { KillTaskDialog } from "@/components/tasks/KillTaskDialog";
 import { TaskRow, TaskInsert, TaskPriority } from "@/lib/tasks";
 import { CloseJobDialog, CloseKind } from "./CloseJobDialog";
+import { useJobPeople } from "@/hooks/usePeople";
+import { PersonRowItem } from "@/components/people/PersonRowItem";
+import { PersonDrawer, PersonDrawerMode } from "@/components/people/PersonDrawer";
 
 export type JobDrawerMode = { kind: "edit"; job: JobRow } | { kind: "create" } | null;
 
@@ -110,8 +113,10 @@ export function JobDrawer({ mode, onClose }: Props) {
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
   const [killTask, setKillTask] = useState<TaskRow | null>(null);
   const [closeKind, setCloseKind] = useState<CloseKind | null>(null);
+  const [personMode, setPersonMode] = useState<PersonDrawerMode>(null);
 
   const { data: linkedTasks = [], isLoading: tasksLoading } = useJobTasks(job?.id ?? null);
+  const { data: linkedPeople = [], isLoading: peopleLoading } = useJobPeople(job?.id ?? null);
 
   useEffect(() => {
     if (!mode) return;
@@ -522,6 +527,7 @@ export function JobDrawer({ mode, onClose }: Props) {
         kind={closeKind}
         onClose={() => setCloseKind(null)}
       />
+      <PersonDrawer mode={personMode} onClose={() => setPersonMode(null)} />
     </>
   );
 }
