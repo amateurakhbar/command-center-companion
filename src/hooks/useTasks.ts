@@ -91,10 +91,22 @@ export function useTaskMutations() {
   }
 
   async function reopen(task: TaskRow) {
-    const prev = { status: task.status, completed_at: task.completed_at, killed_at: task.killed_at, killed_reason: task.killed_reason };
+    const prev = {
+      status: task.status,
+      completed_at: task.completed_at,
+      killed_at: task.killed_at,
+      killed_reason: task.killed_reason,
+      deleted_at: task.deleted_at,
+    };
     await update.mutateAsync({
       id: task.id,
-      patch: { status: "to_do", completed_at: null, killed_at: null, killed_reason: null },
+      patch: {
+        status: "to_do",
+        completed_at: null,
+        killed_at: null,
+        killed_reason: null,
+        deleted_at: null,
+      },
     });
     return prev;
   }
