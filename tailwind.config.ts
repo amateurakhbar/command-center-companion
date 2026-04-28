@@ -72,6 +72,11 @@ export default {
           medium: "hsl(var(--pri-medium))",
           low: "hsl(var(--pri-low))",
         },
+        pri: {
+          high: "hsl(var(--pri-high))",
+          medium: "hsl(var(--pri-medium))",
+          low: "hsl(var(--pri-low))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

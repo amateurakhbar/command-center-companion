@@ -55,6 +55,9 @@ import { BreakDownDialog } from "@/components/tasks/BreakDownDialog";
 import { KillTaskDialog } from "@/components/tasks/KillTaskDialog";
 import { TaskRow, TaskInsert, TaskPriority } from "@/lib/tasks";
 import { CloseJobDialog, CloseKind } from "./CloseJobDialog";
+import { useJobPeople } from "@/hooks/usePeople";
+import { PersonRowItem } from "@/components/people/PersonRowItem";
+import { PersonDrawer, PersonDrawerMode } from "@/components/people/PersonDrawer";
 
 export type JobDrawerMode = { kind: "edit"; job: JobRow } | { kind: "create" } | null;
 
@@ -110,8 +113,10 @@ export function JobDrawer({ mode, onClose }: Props) {
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
   const [killTask, setKillTask] = useState<TaskRow | null>(null);
   const [closeKind, setCloseKind] = useState<CloseKind | null>(null);
+  const [personMode, setPersonMode] = useState<PersonDrawerMode>(null);
 
   const { data: linkedTasks = [], isLoading: tasksLoading } = useJobTasks(job?.id ?? null);
+  const { data: linkedPeople = [], isLoading: peopleLoading } = useJobPeople(job?.id ?? null);
 
   useEffect(() => {
     if (!mode) return;
@@ -483,6 +488,46 @@ export function JobDrawer({ mode, onClose }: Props) {
                 )}
               </div>
             )}
+
+            {/* Linked people */}
+            {isEdit && job && (
+              <div className="space-y-2 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <Label>Linked people</Label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setPersonMode({
+                        kind: "create",
+                        defaults: { related_job_id: job.id, company: job.company },
+                      })
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add person
+                  </Button>
+                </div>
+                {peopleLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : linkedPeople.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border bg-surface-1/40 p-4 text-center text-xs text-muted-foreground">
+                    No linked people yet.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {linkedPeople.map((p) => (
+                      <PersonRowItem
+                        key={p.id}
+                        person={p}
+                        onOpen={(person) => setPersonMode({ kind: "edit", person })}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <SheetFooter className="flex-row justify-between sm:justify-between gap-2">
@@ -522,6 +567,7 @@ export function JobDrawer({ mode, onClose }: Props) {
         kind={closeKind}
         onClose={() => setCloseKind(null)}
       />
+      <PersonDrawer mode={personMode} onClose={() => setPersonMode(null)} />
     </>
   );
 }
