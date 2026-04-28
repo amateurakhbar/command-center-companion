@@ -84,6 +84,7 @@ export default function Overdue() {
               task={t}
               onOpen={(task) => setMode({ kind: "edit", task })}
               onBreakDown={setBreakDownTask}
+              onKill={setKillTask}
             />
           ))}
         </div>
@@ -91,6 +92,7 @@ export default function Overdue() {
 
       <TaskDrawer mode={mode} onClose={() => setMode(null)} />
       <BreakDownDialog task={breakDownTask} onClose={() => setBreakDownTask(null)} />
+      <KillTaskDialog task={killTask} onClose={() => setKillTask(null)} />
     </div>
   );
 }
