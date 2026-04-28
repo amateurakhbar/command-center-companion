@@ -5,6 +5,7 @@ import { TaskRow, isOverdue } from "@/lib/tasks";
 import { TaskRowItem } from "@/components/tasks/TaskRowItem";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { BreakDownDialog } from "@/components/tasks/BreakDownDialog";
+import { KillTaskDialog } from "@/components/tasks/KillTaskDialog";
 import { Button } from "@/components/ui/button";
 import { useTaskActionToasts } from "@/hooks/useTaskActions";
 

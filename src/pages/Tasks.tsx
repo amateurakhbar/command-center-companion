@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TaskRowItem } from "@/components/tasks/TaskRowItem";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import { BreakDownDialog } from "@/components/tasks/BreakDownDialog";
+import { KillTaskDialog } from "@/components/tasks/KillTaskDialog";
 import { toast } from "sonner";
 
 type Mode = { kind: "edit"; task: TaskRow } | { kind: "create" } | null;
@@ -28,6 +29,7 @@ export default function Tasks() {
   const m = useTaskMutations();
   const [mode, setMode] = useState<Mode>(null);
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
+  const [killTask, setKillTask] = useState<TaskRow | null>(null);
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<TaskStatus | "all">("all");
@@ -186,6 +188,7 @@ export default function Tasks() {
                 task={t}
                 onOpen={(task) => setMode({ kind: "edit", task })}
                 onBreakDown={setBreakDownTask}
+                onKill={setKillTask}
                 selectable
                 selected={selected.has(t.id)}
                 onSelectChange={(next) => toggleOne(t.id, next)}
@@ -197,6 +200,7 @@ export default function Tasks() {
 
       <TaskDrawer mode={mode} onClose={() => setMode(null)} />
       <BreakDownDialog task={breakDownTask} onClose={() => setBreakDownTask(null)} />
+      <KillTaskDialog task={killTask} onClose={() => setKillTask(null)} />
     </div>
   );
 }
