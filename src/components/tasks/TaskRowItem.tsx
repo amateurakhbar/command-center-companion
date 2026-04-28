@@ -17,6 +17,7 @@ type Props = {
   task: TaskRow;
   onOpen: (task: TaskRow) => void;
   onBreakDown?: (task: TaskRow) => void;
+  onKill?: (task: TaskRow) => void;
   selectable?: boolean;
   selected?: boolean;
   onSelectChange?: (next: boolean) => void;
@@ -27,6 +28,7 @@ export function TaskRowItem({
   task,
   onOpen,
   onBreakDown,
+  onKill,
   selectable,
   selected,
   onSelectChange,
