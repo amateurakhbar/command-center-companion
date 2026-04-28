@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { NavLink } from "react-router-dom";
 import { Sun, ListTodo, AlertTriangle, Briefcase, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,9 +11,12 @@ const items = [
   { title: "People", url: "/people", icon: Users },
 ];
 
-export function MobileBottomNav() {
+export const MobileBottomNav = forwardRef<HTMLElement>((_props, ref) => {
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-surface-1/95 backdrop-blur supports-[backdrop-filter]:bg-surface-1/80 pb-[env(safe-area-inset-bottom)]">
+    <nav
+      ref={ref}
+      className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-surface-1/95 backdrop-blur supports-[backdrop-filter]:bg-surface-1/80 pb-[env(safe-area-inset-bottom)]"
+    >
       <ul className="grid grid-cols-5">
         {items.map((item) => (
           <li key={item.title}>
@@ -34,4 +38,6 @@ export function MobileBottomNav() {
       </ul>
     </nav>
   );
-}
+});
+
+MobileBottomNav.displayName = "MobileBottomNav";
