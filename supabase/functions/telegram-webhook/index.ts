@@ -41,6 +41,28 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  const url = new URL(req.url);
+
+  // One-off self-registration helper. Must be called with the webhook secret as ?setup=<secret>.
+  if (url.searchParams.get("setup") && url.searchParams.get("setup") === WEBHOOK_SECRET) {
+    const webhookUrl = `${SUPABASE_URL.replace(".supabase.co", ".supabase.co")}/functions/v1/telegram-webhook`;
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        secret_token: WEBHOOK_SECRET,
+        allowed_updates: ["message"],
+        drop_pending_updates: true,
+      }),
+    });
+    const setRes = await r.json();
+    const info = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`).then((x) => x.json());
+    return new Response(JSON.stringify({ setWebhook: setRes, info }, null, 2), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // Verify Telegram secret header
   const headerSecret = req.headers.get("x-telegram-bot-api-secret-token");
   if (!WEBHOOK_SECRET || headerSecret !== WEBHOOK_SECRET) {
