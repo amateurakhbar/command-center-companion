@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Trash2, LogOut, Loader2 } from "lucide-react";
+import { Settings as SettingsIcon, Trash2, LogOut, Loader2, Send, Copy, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
@@ -149,6 +149,9 @@ export default function Settings() {
           Save settings
         </Button>
       </div>
+
+      {/* Telegram */}
+      <TelegramCard />
 
       {/* Trash */}
       <Card className="p-6 bg-surface-1">
