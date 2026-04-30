@@ -320,7 +320,7 @@ function TelegramCard() {
     delete (prefs as any).telegram_link;
     await supabase
       .from("settings")
-      .upsert({ user_id: user.id, preferences: prefs }, { onConflict: "user_id" });
+      .upsert({ user_id: user.id, preferences: prefs as any }, { onConflict: "user_id" });
     setBusy(false);
     if (profRes.error) return toast.error(profRes.error.message);
     setLinked({ tgUserId: null, tgChatId: null });
