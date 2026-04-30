@@ -43,8 +43,8 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
 
-  // One-off self-registration helper. Must be called with the webhook secret as ?setup=<secret>.
-  if (url.searchParams.get("setup") && url.searchParams.get("setup") === WEBHOOK_SECRET) {
+  // One-off self-registration helper. Hit GET /telegram-webhook?setup=1 to (re)register the webhook with Telegram.
+  if (url.searchParams.get("setup") === "1") {
     const webhookUrl = `${SUPABASE_URL.replace(".supabase.co", ".supabase.co")}/functions/v1/telegram-webhook`;
     const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
       method: "POST",
