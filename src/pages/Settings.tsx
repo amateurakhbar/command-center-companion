@@ -211,3 +211,205 @@ function TimeField({
     </div>
   );
 }
+
+const BOT_USERNAME = "ab_command_center_bot";
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const CODE_TTL_MS = 15 * 60 * 1000;
+
+type TelegramLink = { code: string; expires_at: string };
+
+function generateCode(len = 8): string {
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  let out = "";
+  for (let i = 0; i < len; i++) out += CODE_CHARS[arr[i] % CODE_CHARS.length];
+  return out;
+}
+
+function TelegramCard() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [linked, setLinked] = useState<{ tgUserId: number | null; tgChatId: number | null }>({
+    tgUserId: null,
+    tgChatId: null,
+  });
+  const [link, setLink] = useState<TelegramLink | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+    Promise.all([
+      supabase.from("profiles").select("telegram_user_id, telegram_chat_id").eq("id", user.id).maybeSingle(),
+      supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle(),
+    ]).then(([{ data: prof }, { data: s }]) => {
+      if (!mounted) return;
+      setLinked({
+        tgUserId: prof?.telegram_user_id ?? null,
+        tgChatId: prof?.telegram_chat_id ?? null,
+      });
+      const prefs = (s?.preferences as any) ?? {};
+      const tgLink = prefs.telegram_link as TelegramLink | undefined;
+      if (tgLink && new Date(tgLink.expires_at).getTime() > Date.now()) {
+        setLink(tgLink);
+      }
+      setLoading(false);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
+  // Tick for countdown
+  useEffect(() => {
+    if (!link) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [link]);
+
+  const isConnected = linked.tgUserId !== null;
+  const remainingMs = link ? new Date(link.expires_at).getTime() - now : 0;
+  const codeExpired = link && remainingMs <= 0;
+
+  const generate = async () => {
+    if (!user) return;
+    setBusy(true);
+    const newLink: TelegramLink = {
+      code: generateCode(),
+      expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
+    };
+    const { data: existing } = await supabase
+      .from("settings")
+      .select("preferences")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+    const newPrefs = { ...prefs, telegram_link: newLink };
+    const { error } = await supabase
+      .from("settings")
+      .upsert({ user_id: user.id, preferences: newPrefs }, { onConflict: "user_id" });
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    setLink(newLink);
+    setNow(Date.now());
+    toast.success("Connection code generated");
+  };
+
+  const copy = async () => {
+    if (!link) return;
+    await navigator.clipboard.writeText(link.code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const disconnect = async () => {
+    if (!user) return;
+    setBusy(true);
+    const profRes = await supabase
+      .from("profiles")
+      .update({ telegram_user_id: null, telegram_chat_id: null })
+      .eq("id", user.id);
+    const { data: existing } = await supabase
+      .from("settings")
+      .select("preferences")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+    delete (prefs as any).telegram_link;
+    await supabase
+      .from("settings")
+      .upsert({ user_id: user.id, preferences: prefs }, { onConflict: "user_id" });
+    setBusy(false);
+    if (profRes.error) return toast.error(profRes.error.message);
+    setLinked({ tgUserId: null, tgChatId: null });
+    setLink(null);
+    toast.success("Telegram disconnected");
+  };
+
+  const fmtRemaining = () => {
+    const s = Math.max(0, Math.floor(remainingMs / 1000));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${r.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <Card className="p-6 bg-surface-1 space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle>Telegram</SectionTitle>
+        {isConnected ? (
+          <span className="text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            Connected
+          </span>
+        ) : (
+          <span className="text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
+            Not connected
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : isConnected ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Linked to Telegram user <span className="font-mono text-foreground">{linked.tgUserId}</span>
+            {" · "}chat <span className="font-mono text-foreground">{linked.tgChatId}</span>.
+          </p>
+          <Button variant="outline" size="sm" onClick={disconnect} disabled={busy}>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Disconnect
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Link your Telegram account to capture tasks from chat (Stage 2).
+          </p>
+
+          {link && !codeExpired ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-lg tracking-widest px-3 py-2 rounded bg-background border border-border">
+                  {link.code}
+                </code>
+                <Button variant="outline" size="sm" onClick={copy}>
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+                <span className="text-xs text-muted-foreground font-mono">expires in {fmtRemaining()}</span>
+              </div>
+              <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                <li>
+                  Open Telegram and message{" "}
+                  <a
+                    href={`https://t.me/${BOT_USERNAME}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline font-mono"
+                  >
+                    @{BOT_USERNAME}
+                  </a>
+                </li>
+                <li>
+                  Send: <code className="font-mono text-foreground">/connect {link.code}</code>
+                </li>
+                <li>Refresh this page to confirm the link.</li>
+              </ol>
+              <Button variant="ghost" size="sm" onClick={generate} disabled={busy}>
+                Generate a new code
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={generate} disabled={busy}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Generate connection code
+            </Button>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
