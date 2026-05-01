@@ -19,14 +19,21 @@ const HELP_CONNECTED = [
   "/add Follow up with Hamza tomorrow #followup !high",
   "/today",
   "/overdue",
-  "/done TASK_ID",
-  "/delay TASK_ID 1h",
-  "/delay TASK_ID tomorrow",
-  "/waiting TASK_ID",
-  "/reopen TASK_ID",
+  "/done 1   (or /done TASK_ID)",
+  "/delay 1 tomorrow   (or /delay TASK_ID 1h)",
+  "/waiting 1",
+  "/reopen 1",
   "",
-  "Use /today or /overdue to get task IDs.",
+  "After /today or /overdue you can also reply without the slash:",
+  "done 1",
+  "delay 2 tomorrow",
+  "waiting 1",
+  "reopen 2",
 ].join("\n");
+
+const LIST_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const LIST_EXPIRED_REPLY =
+  "That task list expired. Send /today or /overdue again.";
 
 const HELP_UNCONNECTED =
   "To connect, open AB Command Center Settings, generate a Telegram code, then send /connect CODE.";
