@@ -699,12 +699,14 @@ Deno.serve(async (req) => {
       const lines = ["Today", ""];
       top.forEach((t: any, i: number) => {
         const time = t.due_at
-          ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(t.due_at))
+          ? new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(t.due_at))
           : "No due time";
         const prio = t.priority === "high" ? "High" : t.priority === "medium" ? "Med" : "Low";
         lines.push(`${i + 1}. ${shortId(t.id)} ${t.title}, ${prio}, ${time}`);
       });
       if (list.length > 10) lines.push("", `And ${list.length - 10} more. Open the dashboard for the full list.`);
+      lines.push("", "Reply: done 1   delay 2 tomorrow   waiting 1   reopen 2");
+      await saveTaskList(supabase, userId, "today", top.map((t: any) => ({ id: t.id, title: t.title })));
       await tgSend(chatId, lines.join("\n"));
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
