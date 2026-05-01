@@ -483,7 +483,18 @@ Deno.serve(async (req) => {
   // Normalize command (strip @bot_username)
   const firstToken = trimmed.split(/\s+/)[0];
   let command = firstToken.startsWith("/") ? firstToken.split("@")[0].toLowerCase() : "";
-  const restAfterCmd = command ? trimmed.slice(firstToken.length).trim() : trimmed;
+  let restAfterCmd = command ? trimmed.slice(firstToken.length).trim() : trimmed;
+
+  // Numbered shortcut: "done 1", "delay 1 tomorrow", "waiting 2", "reopen 3"
+  // Only triggered when there is no slash command AND the first arg is a number,
+  // so we don't hijack normal chat.
+  if (!command) {
+    const m = trimmed.match(/^(done|delay|waiting|reopen)\s+(\d+)(?:\s+(.+))?$/i);
+    if (m) {
+      command = `/${m[1].toLowerCase()}`;
+      restAfterCmd = m[3] ? `${m[2]} ${m[3]}` : m[2];
+    }
+  }
   const argTokens = restAfterCmd ? restAfterCmd.split(/\s+/) : [];
 
   try {
