@@ -19,14 +19,21 @@ const HELP_CONNECTED = [
   "/add Follow up with Hamza tomorrow #followup !high",
   "/today",
   "/overdue",
-  "/done TASK_ID",
-  "/delay TASK_ID 1h",
-  "/delay TASK_ID tomorrow",
-  "/waiting TASK_ID",
-  "/reopen TASK_ID",
+  "/done 1   (or /done TASK_ID)",
+  "/delay 1 tomorrow   (or /delay TASK_ID 1h)",
+  "/waiting 1",
+  "/reopen 1",
   "",
-  "Use /today or /overdue to get task IDs.",
+  "After /today or /overdue you can also reply without the slash:",
+  "done 1",
+  "delay 2 tomorrow",
+  "waiting 1",
+  "reopen 2",
 ].join("\n");
+
+const LIST_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const LIST_EXPIRED_REPLY =
+  "That task list expired. Send /today or /overdue again.";
 
 const HELP_UNCONNECTED =
   "To connect, open AB Command Center Settings, generate a Telegram code, then send /connect CODE.";
@@ -352,7 +359,94 @@ async function resolveShortId(
   return { task: matches[0], error: null };
 }
 
+/* ---------------- Numbered list (last_telegram_task_list) ---------------- */
+
+type ListItem = { index: number; task_id: string; short_id: string; title: string };
+type StoredList = {
+  source: "today" | "overdue";
+  created_at: string;
+  expires_at: string;
+  items: ListItem[];
+};
+
+async function saveTaskList(
+  supabase: any,
+  userId: string,
+  source: "today" | "overdue",
+  tasks: { id: string; title: string }[],
+) {
+  const now = Date.now();
+  const stored: StoredList = {
+    source,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + LIST_TTL_MS).toISOString(),
+    items: tasks.map((t, i) => ({
+      index: i + 1,
+      task_id: t.id,
+      short_id: shortId(t.id),
+      title: t.title,
+    })),
+  };
+  const { data: existing } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+  const newPrefs = { ...prefs, last_telegram_task_list: stored };
+  await supabase.from("settings")
+    .upsert({ user_id: userId, preferences: newPrefs }, { onConflict: "user_id" });
+}
+
+async function loadTaskList(supabase: any, userId: string): Promise<StoredList | null> {
+  const { data } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = (data?.preferences as any) ?? {};
+  const list = prefs.last_telegram_task_list as StoredList | undefined;
+  if (!list?.items?.length || !list?.expires_at) return null;
+  return list;
+}
+
+/**
+ * Resolve an argument that may be either a number (numbered list lookup) or
+ * a short ID. Returns the same shape as resolveShortId, plus an "expired"
+ * error code for stale numbered lists.
+ */
+async function resolveIdArg(
+  supabase: any,
+  userId: string,
+  arg: string,
+  includeDeleted = false,
+): Promise<{ task: any | null; error: "missing" | "ambiguous" | "not_found" | "expired" | "bad_number" | null; numberRequested?: number }> {
+  const trimmed = arg.trim();
+  if (!trimmed) return { task: null, error: "missing" };
+  if (/^\d+$/.test(trimmed)) {
+    const n = parseInt(trimmed, 10);
+    const list = await loadTaskList(supabase, userId);
+    if (!list) return { task: null, error: "expired", numberRequested: n };
+    if (new Date(list.expires_at).getTime() <= Date.now()) {
+      return { task: null, error: "expired", numberRequested: n };
+    }
+    const item = list.items.find((it) => it.index === n);
+    if (!item) return { task: null, error: "bad_number", numberRequested: n };
+    let q = supabase.from("tasks").select("*").eq("user_id", userId).eq("id", item.task_id);
+    if (!includeDeleted) q = q.is("deleted_at", null);
+    const { data } = await q.maybeSingle();
+    if (!data) return { task: null, error: "not_found", numberRequested: n };
+    return { task: data, error: null, numberRequested: n };
+  }
+  return await resolveShortId(supabase, userId, trimmed, includeDeleted);
+}
+
+function replyForResolveError(
+  err: "missing" | "ambiguous" | "not_found" | "expired" | "bad_number",
+  numberRequested?: number,
+): string {
+  if (err === "expired") return LIST_EXPIRED_REPLY;
+  if (err === "bad_number") return `I could not find task number ${numberRequested}. Send /today or /overdue again.`;
+  if (err === "ambiguous") return AMBIGUOUS_REPLY;
+  return NOT_FOUND_REPLY;
+}
+
 /* ---------------- Main handler ---------------- */
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -389,7 +483,18 @@ Deno.serve(async (req) => {
   // Normalize command (strip @bot_username)
   const firstToken = trimmed.split(/\s+/)[0];
   let command = firstToken.startsWith("/") ? firstToken.split("@")[0].toLowerCase() : "";
-  const restAfterCmd = command ? trimmed.slice(firstToken.length).trim() : trimmed;
+  let restAfterCmd = command ? trimmed.slice(firstToken.length).trim() : trimmed;
+
+  // Numbered shortcut: "done 1", "delay 1 tomorrow", "waiting 2", "reopen 3"
+  // Only triggered when there is no slash command AND the first arg is a number,
+  // so we don't hijack normal chat.
+  if (!command) {
+    const m = trimmed.match(/^(done|delay|waiting|reopen)\s+(\d+)(?:\s+(.+))?$/i);
+    if (m) {
+      command = `/${m[1].toLowerCase()}`;
+      restAfterCmd = m[3] ? `${m[2]} ${m[3]}` : m[2];
+    }
+  }
   const argTokens = restAfterCmd ? restAfterCmd.split(/\s+/) : [];
 
   try {
@@ -594,12 +699,14 @@ Deno.serve(async (req) => {
       const lines = ["Today", ""];
       top.forEach((t: any, i: number) => {
         const time = t.due_at
-          ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(t.due_at))
+          ? new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(t.due_at))
           : "No due time";
         const prio = t.priority === "high" ? "High" : t.priority === "medium" ? "Med" : "Low";
         lines.push(`${i + 1}. ${shortId(t.id)} ${t.title}, ${prio}, ${time}`);
       });
       if (list.length > 10) lines.push("", `And ${list.length - 10} more. Open the dashboard for the full list.`);
+      lines.push("", "Reply: done 1   delay 2 tomorrow   waiting 1   reopen 2");
+      await saveTaskList(supabase, userId, "today", top.map((t: any) => ({ id: t.id, title: t.title })));
       await tgSend(chatId, lines.join("\n"));
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
@@ -635,20 +742,21 @@ Deno.serve(async (req) => {
         lines.push(`${i + 1}. ${shortId(t.id)} ${t.title}, ${prio}, ${fmtDue(t.due_at, tz)}`);
       });
       if (list.length > 10) lines.push("", `And ${list.length - 10} more. Open the dashboard for the full list.`);
+      lines.push("", "Reply: done 1   delay 2 tomorrow   waiting 1   reopen 2");
+      await saveTaskList(supabase, userId, "overdue", top.map((t: any) => ({ id: t.id, title: t.title })));
       await tgSend(chatId, lines.join("\n"));
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /done TASK_ID ---------- */
+    /* ---------- /done <number|short_id> ---------- */
     if (command === "/done") {
       const id = argTokens[0];
       if (!id) {
-        await tgSend(chatId, "Send /done TASK_ID. Use /today or /overdue to get task IDs.");
+        await tgSend(chatId, "Send /done 1 (after /today or /overdue) or /done TASK_ID.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       if (alreadyProcessed) {
         await tgSend(chatId, `Done: ${r.task.title}`);
         return new Response("ok", { status: 200, headers: corsHeaders });
@@ -661,16 +769,12 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /delay TASK_ID OPTION ---------- */
+    /* ---------- /delay <number|short_id> OPTION ---------- */
     if (command === "/delay") {
       const id = argTokens[0];
       const opt = argTokens.slice(1).join(" ");
-      if (!id) {
-        await tgSend(chatId, "Send /delay TASK_ID 1h, /delay TASK_ID tonight, or /delay TASK_ID tomorrow.");
-        return new Response("ok", { status: 200, headers: corsHeaders });
-      }
-      if (!opt) {
-        await tgSend(chatId, "Send /delay TASK_ID 1h, /delay TASK_ID tonight, or /delay TASK_ID tomorrow.");
+      if (!id || !opt) {
+        await tgSend(chatId, "Send /delay 1 tomorrow, /delay 1 1h, or /delay TASK_ID tomorrow.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
       const parsed = parseDelayOption(opt, tz);
@@ -678,9 +782,8 @@ Deno.serve(async (req) => {
         await tgSend(chatId, "Unsupported delay option. Try 1h, 2h, tonight, tomorrow, tomorrow 9am, or next Monday.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       if (alreadyProcessed) {
         await tgSend(chatId, `Delayed: ${r.task.title}\nNew due: ${fmtDue(parsed.dueAt, tz)}`);
         return new Response("ok", { status: 200, headers: corsHeaders });
@@ -696,32 +799,30 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /waiting TASK_ID ---------- */
+    /* ---------- /waiting <number|short_id> ---------- */
     if (command === "/waiting") {
       const id = argTokens[0];
       if (!id) {
-        await tgSend(chatId, "Send /waiting TASK_ID. Use /today or /overdue to get task IDs.");
+        await tgSend(chatId, "Send /waiting 1 (after /today or /overdue) or /waiting TASK_ID.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       const { error } = await supabase.from("tasks").update({ status: "waiting" }).eq("id", r.task.id).eq("user_id", userId);
       if (error) { console.error(error); await tgSend(chatId, "Could not update that task."); return new Response("ok", { status: 200, headers: corsHeaders }); }
       await tgSend(chatId, `Moved to waiting: ${r.task.title}`);
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /reopen TASK_ID ---------- */
+    /* ---------- /reopen <number|short_id> ---------- */
     if (command === "/reopen") {
       const id = argTokens[0];
       if (!id) {
-        await tgSend(chatId, "Send /reopen TASK_ID. Use /today or /overdue to get task IDs.");
+        await tgSend(chatId, "Send /reopen 1 (after /today or /overdue) or /reopen TASK_ID.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id, true);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id, true);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       const { error } = await supabase.from("tasks").update({
         status: "to_do",
         completed_at: null,
