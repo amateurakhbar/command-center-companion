@@ -742,6 +742,8 @@ Deno.serve(async (req) => {
         lines.push(`${i + 1}. ${shortId(t.id)} ${t.title}, ${prio}, ${fmtDue(t.due_at, tz)}`);
       });
       if (list.length > 10) lines.push("", `And ${list.length - 10} more. Open the dashboard for the full list.`);
+      lines.push("", "Reply: done 1   delay 2 tomorrow   waiting 1   reopen 2");
+      await saveTaskList(supabase, userId, "overdue", top.map((t: any) => ({ id: t.id, title: t.title })));
       await tgSend(chatId, lines.join("\n"));
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
