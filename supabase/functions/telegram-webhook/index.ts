@@ -359,7 +359,94 @@ async function resolveShortId(
   return { task: matches[0], error: null };
 }
 
+/* ---------------- Numbered list (last_telegram_task_list) ---------------- */
+
+type ListItem = { index: number; task_id: string; short_id: string; title: string };
+type StoredList = {
+  source: "today" | "overdue";
+  created_at: string;
+  expires_at: string;
+  items: ListItem[];
+};
+
+async function saveTaskList(
+  supabase: any,
+  userId: string,
+  source: "today" | "overdue",
+  tasks: { id: string; title: string }[],
+) {
+  const now = Date.now();
+  const stored: StoredList = {
+    source,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + LIST_TTL_MS).toISOString(),
+    items: tasks.map((t, i) => ({
+      index: i + 1,
+      task_id: t.id,
+      short_id: shortId(t.id),
+      title: t.title,
+    })),
+  };
+  const { data: existing } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+  const newPrefs = { ...prefs, last_telegram_task_list: stored };
+  await supabase.from("settings")
+    .upsert({ user_id: userId, preferences: newPrefs }, { onConflict: "user_id" });
+}
+
+async function loadTaskList(supabase: any, userId: string): Promise<StoredList | null> {
+  const { data } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = (data?.preferences as any) ?? {};
+  const list = prefs.last_telegram_task_list as StoredList | undefined;
+  if (!list?.items?.length || !list?.expires_at) return null;
+  return list;
+}
+
+/**
+ * Resolve an argument that may be either a number (numbered list lookup) or
+ * a short ID. Returns the same shape as resolveShortId, plus an "expired"
+ * error code for stale numbered lists.
+ */
+async function resolveIdArg(
+  supabase: any,
+  userId: string,
+  arg: string,
+  includeDeleted = false,
+): Promise<{ task: any | null; error: "missing" | "ambiguous" | "not_found" | "expired" | "bad_number" | null; numberRequested?: number }> {
+  const trimmed = arg.trim();
+  if (!trimmed) return { task: null, error: "missing" };
+  if (/^\d+$/.test(trimmed)) {
+    const n = parseInt(trimmed, 10);
+    const list = await loadTaskList(supabase, userId);
+    if (!list) return { task: null, error: "expired", numberRequested: n };
+    if (new Date(list.expires_at).getTime() <= Date.now()) {
+      return { task: null, error: "expired", numberRequested: n };
+    }
+    const item = list.items.find((it) => it.index === n);
+    if (!item) return { task: null, error: "bad_number", numberRequested: n };
+    let q = supabase.from("tasks").select("*").eq("user_id", userId).eq("id", item.task_id);
+    if (!includeDeleted) q = q.is("deleted_at", null);
+    const { data } = await q.maybeSingle();
+    if (!data) return { task: null, error: "not_found", numberRequested: n };
+    return { task: data, error: null, numberRequested: n };
+  }
+  return await resolveShortId(supabase, userId, trimmed, includeDeleted);
+}
+
+function replyForResolveError(
+  err: "missing" | "ambiguous" | "not_found" | "expired" | "bad_number",
+  numberRequested?: number,
+): string {
+  if (err === "expired") return LIST_EXPIRED_REPLY;
+  if (err === "bad_number") return `I could not find task number ${numberRequested}. Send /today or /overdue again.`;
+  if (err === "ambiguous") return AMBIGUOUS_REPLY;
+  return NOT_FOUND_REPLY;
+}
+
 /* ---------------- Main handler ---------------- */
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
