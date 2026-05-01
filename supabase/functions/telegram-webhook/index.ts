@@ -748,16 +748,15 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /done TASK_ID ---------- */
+    /* ---------- /done <number|short_id> ---------- */
     if (command === "/done") {
       const id = argTokens[0];
       if (!id) {
-        await tgSend(chatId, "Send /done TASK_ID. Use /today or /overdue to get task IDs.");
+        await tgSend(chatId, "Send /done 1 (after /today or /overdue) or /done TASK_ID.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       if (alreadyProcessed) {
         await tgSend(chatId, `Done: ${r.task.title}`);
         return new Response("ok", { status: 200, headers: corsHeaders });
@@ -770,16 +769,12 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /delay TASK_ID OPTION ---------- */
+    /* ---------- /delay <number|short_id> OPTION ---------- */
     if (command === "/delay") {
       const id = argTokens[0];
       const opt = argTokens.slice(1).join(" ");
-      if (!id) {
-        await tgSend(chatId, "Send /delay TASK_ID 1h, /delay TASK_ID tonight, or /delay TASK_ID tomorrow.");
-        return new Response("ok", { status: 200, headers: corsHeaders });
-      }
-      if (!opt) {
-        await tgSend(chatId, "Send /delay TASK_ID 1h, /delay TASK_ID tonight, or /delay TASK_ID tomorrow.");
+      if (!id || !opt) {
+        await tgSend(chatId, "Send /delay 1 tomorrow, /delay 1 1h, or /delay TASK_ID tomorrow.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
       const parsed = parseDelayOption(opt, tz);
@@ -787,9 +782,8 @@ Deno.serve(async (req) => {
         await tgSend(chatId, "Unsupported delay option. Try 1h, 2h, tonight, tomorrow, tomorrow 9am, or next Monday.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       if (alreadyProcessed) {
         await tgSend(chatId, `Delayed: ${r.task.title}\nNew due: ${fmtDue(parsed.dueAt, tz)}`);
         return new Response("ok", { status: 200, headers: corsHeaders });
@@ -805,32 +799,30 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /waiting TASK_ID ---------- */
+    /* ---------- /waiting <number|short_id> ---------- */
     if (command === "/waiting") {
       const id = argTokens[0];
       if (!id) {
-        await tgSend(chatId, "Send /waiting TASK_ID. Use /today or /overdue to get task IDs.");
+        await tgSend(chatId, "Send /waiting 1 (after /today or /overdue) or /waiting TASK_ID.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       const { error } = await supabase.from("tasks").update({ status: "waiting" }).eq("id", r.task.id).eq("user_id", userId);
       if (error) { console.error(error); await tgSend(chatId, "Could not update that task."); return new Response("ok", { status: 200, headers: corsHeaders }); }
       await tgSend(chatId, `Moved to waiting: ${r.task.title}`);
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /reopen TASK_ID ---------- */
+    /* ---------- /reopen <number|short_id> ---------- */
     if (command === "/reopen") {
       const id = argTokens[0];
       if (!id) {
-        await tgSend(chatId, "Send /reopen TASK_ID. Use /today or /overdue to get task IDs.");
+        await tgSend(chatId, "Send /reopen 1 (after /today or /overdue) or /reopen TASK_ID.");
         return new Response("ok", { status: 200, headers: corsHeaders });
       }
-      const r = await resolveShortId(supabase, userId, id, true);
-      if (r.error === "ambiguous") { await tgSend(chatId, AMBIGUOUS_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
-      if (!r.task) { await tgSend(chatId, NOT_FOUND_REPLY); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id, true);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
       const { error } = await supabase.from("tasks").update({
         status: "to_do",
         completed_at: null,
