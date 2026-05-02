@@ -444,7 +444,7 @@ function AutomationCard() {
     const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
     (prefs as any).ai_parser_enabled = next;
     const { error } = await supabase
-      .from("settings").upsert({ user_id: user.id, preferences: prefs }, { onConflict: "user_id" });
+      .from("settings").upsert([{ user_id: user.id, preferences: prefs as any }], { onConflict: "user_id" });
     setSaving(false);
     if (error) {
       setAiEnabled(!next);
