@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Trash2, LogOut, Loader2, Send, Copy, Check } from "lucide-react";
+import { Settings as SettingsIcon, Trash2, LogOut, Loader2, Send, Copy, Check, Sparkles } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
