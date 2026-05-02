@@ -1006,10 +1006,88 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    // Unknown command
+    // ---------- Natural language / clarification reply ----------
     if (command) {
       await tgSend(chatId, "Unknown command. Send /help.");
+      return new Response("ok", { status: 200, headers: corsHeaders });
     }
+
+    // No slash command. Check pending clarification first.
+    const pending = await getPendingClarification(supabase, userId);
+    const enabled = await aiParserEnabled(supabase, userId);
+
+    if (!enabled) {
+      await tgSend(chatId, "AI parsing is not enabled. Use /add to capture tasks, or enable it in Settings → Automation.");
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    // Log the raw inbound text (the parser will also log its own row, but we keep a record of the inbound)
+    await supabase.from("raw_inputs").insert({
+      user_id: userId, source: "telegram",
+      content: text,
+      parsed_json: {
+        telegram_message_id: messageId, telegram_chat_id: chatId,
+        kind: pending ? "clarification_reply" : "natural_language",
+      },
+      parser_version: "telegram_text_v1",
+    });
+
+    const idemKeyBase = `telegram:${chatId}:${messageId}`;
+    // Idempotency: skip if we already processed this message_id with ai_parser tasks
+    const { data: priorTasks } = await supabase
+      .from("tasks").select("id, title, category, priority, due_at, idempotency_key")
+      .eq("user_id", userId)
+      .like("idempotency_key", `${idemKeyBase}:%`);
+    if (priorTasks && priorTasks.length > 0) {
+      await tgSend(chatId, formatCapturedTasks(priorTasks, tz));
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    let parserInput = text;
+    if (pending) {
+      parserInput = `Original message: ${pending.original_text}\nClarification question: ${pending.question}\nUser reply: ${text}`;
+      await setPendingClarification(supabase, userId, null);
+    }
+
+    const result = await callAiParser(userId, parserInput, tz, "telegram");
+
+    if (!result || result.success === false) {
+      const err = result?.error;
+      if (err === "ai_not_configured") {
+        await tgSend(chatId, "AI parsing is not configured yet. Use /add for now.");
+      } else {
+        await tgSend(chatId, "I could not parse that reliably. Use /add followed by the task for now.");
+      }
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    if (result.needs_clarification) {
+      const q = result.clarification_question || "Could you clarify what you mean?";
+      const now = Date.now();
+      await setPendingClarification(supabase, userId, {
+        raw_input_id: result.raw_input_id ?? null,
+        original_text: text,
+        question: q,
+        created_at: new Date(now).toISOString(),
+        expires_at: new Date(now + CLARIFICATION_TTL_MS).toISOString(),
+      });
+      await tgSend(chatId, q);
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    if (!Array.isArray(result.tasks) || result.tasks.length === 0) {
+      await tgSend(chatId, "I did not detect any task in that message. Try rephrasing or use /add.");
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    const created = await createTasksFromAI(
+      supabase, userId, result.tasks, result.raw_input_id ?? null, idemKeyBase,
+    );
+    if (created.length === 0) {
+      await tgSend(chatId, "I parsed your message but could not save the tasks. Please try again.");
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+    await tgSend(chatId, formatCapturedTasks(created, tz));
     return new Response("ok", { status: 200, headers: corsHeaders });
   } catch (e) {
     console.error("telegram-webhook error", e);
