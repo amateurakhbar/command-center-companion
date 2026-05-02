@@ -448,6 +448,174 @@ function replyForResolveError(
   return NOT_FOUND_REPLY;
 }
 
+/* ---------------- AI parser bridge ---------------- */
+
+const CLARIFICATION_TTL_MS = 30 * 60 * 1000;
+
+type PendingClarification = {
+  raw_input_id: string | null;
+  original_text: string;
+  question: string;
+  created_at: string;
+  expires_at: string;
+};
+
+async function callAiParser(userId: string, text: string, tz: string, source: string): Promise<any | null> {
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-parser`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        text,
+        timezone: tz,
+        current_time_iso: new Date().toISOString(),
+        source,
+      }),
+    });
+    if (!resp.ok) {
+      console.error("ai-parser HTTP error", resp.status);
+      return null;
+    }
+    return await resp.json();
+  } catch (e) {
+    console.error("ai-parser call failed", e);
+    return null;
+  }
+}
+
+async function setPendingClarification(supabase: any, userId: string, p: PendingClarification | null) {
+  const { data: existing } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+  if (p) (prefs as any).pending_clarification = p;
+  else delete (prefs as any).pending_clarification;
+  await supabase.from("settings")
+    .upsert({ user_id: userId, preferences: prefs }, { onConflict: "user_id" });
+}
+
+async function getPendingClarification(supabase: any, userId: string): Promise<PendingClarification | null> {
+  const { data } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const p = (data?.preferences as any)?.pending_clarification as PendingClarification | undefined;
+  if (!p) return null;
+  if (new Date(p.expires_at).getTime() <= Date.now()) return null;
+  return p;
+}
+
+async function aiParserEnabled(supabase: any, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = (data?.preferences as any) ?? {};
+  return prefs.ai_parser_enabled !== false;
+}
+
+async function findPersonId(supabase: any, userId: string, name: string | null | undefined): Promise<string | null> {
+  if (!name || !name.trim()) return null;
+  const n = name.trim();
+  const { data } = await supabase
+    .from("people").select("id, name").eq("user_id", userId).is("deleted_at", null);
+  if (!data || data.length === 0) return null;
+  const lower = n.toLowerCase();
+  const exact = data.find((p: any) => (p.name ?? "").toLowerCase() === lower);
+  if (exact) return exact.id;
+  const partial = data.filter((p: any) => {
+    const pn = (p.name ?? "").toLowerCase();
+    return pn.includes(lower) || lower.includes(pn);
+  });
+  if (partial.length === 1) return partial[0].id;
+  return null;
+}
+
+async function findJobId(supabase: any, userId: string, company: string | null | undefined, role: string | null | undefined): Promise<string | null> {
+  if (!company && !role) return null;
+  const { data } = await supabase
+    .from("jobs").select("id, company, role_title").eq("user_id", userId).is("deleted_at", null);
+  if (!data || data.length === 0) return null;
+  if (company) {
+    const c = company.trim().toLowerCase();
+    const exact = data.find((j: any) => (j.company ?? "").toLowerCase() === c);
+    if (exact) return exact.id;
+    const partial = data.filter((j: any) => {
+      const jc = (j.company ?? "").toLowerCase();
+      return jc.includes(c) || c.includes(jc);
+    });
+    if (partial.length === 1) return partial[0].id;
+    if (partial.length > 1 && role) {
+      const r = role.trim().toLowerCase();
+      const refined = partial.find((j: any) => (j.role_title ?? "").toLowerCase().includes(r));
+      if (refined) return refined.id;
+    }
+  }
+  return null;
+}
+
+async function createTasksFromAI(
+  supabase: any,
+  userId: string,
+  tasks: any[],
+  rawInputId: string | null,
+  idemKeyBase: string | null,
+): Promise<{ id: string; title: string; category: string; priority: string; due_at: string | null }[]> {
+  const created: any[] = [];
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    const personId = await findPersonId(supabase, userId, t.person_name);
+    const jobId = await findJobId(supabase, userId, t.company_name, t.job_title);
+
+    const noteParts: string[] = [];
+    if (t.notes) noteParts.push(t.notes);
+    if (t.next_action) noteParts.push(`Next: ${t.next_action}`);
+    if (t.person_name && !personId) noteParts.push(`Person: ${t.person_name}`);
+    if (t.company_name && !jobId) noteParts.push(`Company: ${t.company_name}`);
+    if (t.job_title && !jobId) noteParts.push(`Role: ${t.job_title}`);
+    const description = ((t.description ? `${t.description}\n` : "") + noteParts.join("\n")) || null;
+
+    const idemKey = idemKeyBase ? `${idemKeyBase}:${i}` : null;
+    if (idemKey) {
+      const { data: existing } = await supabase
+        .from("tasks").select("id, title, category, priority, due_at")
+        .eq("user_id", userId).eq("idempotency_key", idemKey).maybeSingle();
+      if (existing) { created.push(existing); continue; }
+    }
+
+    const { data: inserted, error } = await supabase
+      .from("tasks").insert({
+        user_id: userId,
+        title: (t.title ?? "Untitled").slice(0, 200),
+        description,
+        category: t.category ?? "admin",
+        priority: t.priority ?? "medium",
+        status: "to_do",
+        source: "ai_parser",
+        due_at: t.due_at ?? null,
+        related_person_id: personId,
+        related_job_id: jobId,
+        raw_input_id: rawInputId,
+        delay_count: 0,
+        idempotency_key: idemKey,
+      }).select("id, title, category, priority, due_at").single();
+    if (error) { console.error("ai task insert error", error); continue; }
+    if (inserted) created.push(inserted);
+  }
+  return created;
+}
+
+function formatCapturedTasks(tasks: any[], tz: string): string {
+  const lines = ["Captured:", ""];
+  tasks.forEach((t, i) => {
+    const prio = t.priority === "high" ? "High" : t.priority === "medium" ? "Medium" : "Low";
+    const cat = String(t.category ?? "admin").replace(/_/g, " ");
+    lines.push(`${i + 1}. ${t.title}`);
+    lines.push(`   Category: ${cat} · Priority: ${prio} · Due: ${fmtDue(t.due_at, tz)}`);
+    lines.push(`   ID: ${shortId(t.id)}`);
+  });
+  return lines.join("\n");
+}
+
 /* ---------------- Main handler ---------------- */
 
 
