@@ -417,3 +417,63 @@ function TelegramCard() {
     </Card>
   );
 }
+
+function AutomationCard() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("settings").select("preferences").eq("user_id", user.id).maybeSingle()
+      .then(({ data }) => {
+        const prefs = (data?.preferences as any) ?? {};
+        setAiEnabled(prefs.ai_parser_enabled !== false);
+        setLoading(false);
+      });
+  }, [user]);
+
+  const toggleAi = async (next: boolean) => {
+    if (!user) return;
+    setSaving(true);
+    setAiEnabled(next);
+    const { data: existing } = await supabase
+      .from("settings").select("preferences").eq("user_id", user.id).maybeSingle();
+    const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+    (prefs as any).ai_parser_enabled = next;
+    const { error } = await supabase
+      .from("settings").upsert({ user_id: user.id, preferences: prefs }, { onConflict: "user_id" });
+    setSaving(false);
+    if (error) {
+      setAiEnabled(!next);
+      toast.error(error.message);
+    } else {
+      toast.success(next ? "AI parsing enabled" : "AI parsing disabled");
+    }
+  };
+
+  return (
+    <Card className="p-6 bg-surface-1 space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle>Automation</SectionTitle>
+        <span className="text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          AI configured
+        </span>
+      </div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <div className="text-sm font-medium flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Natural language task capture
+          </div>
+          <p className="text-xs text-muted-foreground max-w-md">
+            Send Telegram messages in plain English (e.g. "Follow up with Hamza tomorrow about Ektis") and they'll be parsed into structured tasks. Slash commands like /add always bypass AI.
+          </p>
+        </div>
+        <Switch checked={aiEnabled} disabled={loading || saving} onCheckedChange={toggleAi} />
+      </div>
+    </Card>
+  );
+}
