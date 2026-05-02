@@ -29,6 +29,9 @@ const HELP_CONNECTED = [
   "delay 2 tomorrow",
   "waiting 1",
   "reopen 2",
+  "",
+  "You can also send tasks in plain English, e.g.:",
+  "Follow up with Hamza tomorrow about Ektis",
 ].join("\n");
 
 const LIST_TTL_MS = 30 * 60 * 1000; // 30 minutes
