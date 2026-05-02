@@ -150,6 +150,9 @@ export default function Settings() {
         </Button>
       </div>
 
+      {/* Automation */}
+      <AutomationCard />
+
       {/* Telegram */}
       <TelegramCard />
 
