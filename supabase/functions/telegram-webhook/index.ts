@@ -65,6 +65,69 @@ async function tgSend(chatId: number, text: string) {
   }
 }
 
+async function tgSendDocument(chatId: number, filename: string, content: string, mime = "text/calendar"): Promise<boolean> {
+  if (!BOT_TOKEN) return false;
+  try {
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set("document", new Blob([content], { type: mime }), filename);
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
+      method: "POST",
+      body: form,
+    });
+    return r.ok;
+  } catch (e) {
+    console.error("tgSendDocument error", e);
+    return false;
+  }
+}
+
+/* ---------------- ICS builder ---------------- */
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+function toIcsUtc(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
+}
+function escIcs(s: string) { return s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;"); }
+function buildIcs(tasks: any[], tz: string): string {
+  const dtstamp = toIcsUtc(new Date().toISOString());
+  const events = tasks
+    .filter((t) => t.due_at && !t.deleted_at && t.status !== "done" && t.status !== "killed")
+    .map((t) => {
+      const start = new Date(t.due_at);
+      const end = new Date(start.getTime() + 30 * 60_000);
+      const desc = escIcs([
+        `Priority: ${t.priority}`,
+        `Category: ${t.category}`,
+        `Status: ${t.status}`,
+        `Source: ${t.source}`,
+        t.description ? `\n${t.description}` : "",
+      ].filter(Boolean).join("\n"));
+      return [
+        "BEGIN:VEVENT",
+        `UID:${t.id}@ab-command-center`,
+        `DTSTAMP:${dtstamp}`,
+        `DTSTART:${toIcsUtc(start.toISOString())}`,
+        `DTEND:${toIcsUtc(end.toISOString())}`,
+        `SUMMARY:${escIcs(t.title)}`,
+        `DESCRIPTION:${desc}`,
+        `LAST-MODIFIED:${toIcsUtc(t.updated_at ?? t.due_at)}`,
+        "END:VEVENT",
+      ].join("\r\n");
+    });
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//AB Command Center//Remaining//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:AB Command Center — Remaining",
+    `X-WR-TIMEZONE:${tz}`,
+    ...events,
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
+
 /* ---------------- Parsing helpers (no AI) ---------------- */
 
 const PRIORITY_TOKENS: Record<string, string> = {
