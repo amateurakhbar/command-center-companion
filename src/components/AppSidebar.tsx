@@ -12,13 +12,15 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Sun, ListTodo, AlertTriangle, Briefcase, Users, BarChart3, Settings, LogOut } from "lucide-react";
+import { Sun, ListTodo, AlertTriangle, Inbox, Calendar, Briefcase, Users, BarChart3, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const items = [
   { title: "Today", url: "/", icon: Sun },
   { title: "Tasks", url: "/tasks", icon: ListTodo },
   { title: "Overdue", url: "/overdue", icon: AlertTriangle },
+  { title: "Remaining", url: "/remaining", icon: Inbox },
+  { title: "Calendar", url: "/calendar", icon: Calendar },
   { title: "Jobs", url: "/jobs", icon: Briefcase },
   { title: "People", url: "/people", icon: Users },
   { title: "Score", url: "/score", icon: BarChart3 },

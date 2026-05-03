@@ -9,6 +9,8 @@ import AuthPage from "@/pages/Auth";
 import Today from "@/pages/Today";
 import Tasks from "@/pages/Tasks";
 import Overdue from "@/pages/Overdue";
+import Remaining from "@/pages/Remaining";
+import CalendarPage from "@/pages/Calendar";
 import Jobs from "@/pages/Jobs";
 import People from "@/pages/People";
 import Score from "@/pages/Score";
@@ -32,6 +34,8 @@ const App = () => (
                 <Route path="/" element={<Today />} />
                 <Route path="/tasks" element={<Tasks />} />
                 <Route path="/overdue" element={<Overdue />} />
+                <Route path="/remaining" element={<Remaining />} />
+                <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/people" element={<People />} />
                 <Route path="/score" element={<Score />} />
