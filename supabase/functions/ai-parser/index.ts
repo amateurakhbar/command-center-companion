@@ -83,25 +83,39 @@ Deno.serve(async (req) => {
     return new Response("method not allowed", { status: 405, headers: corsHeaders });
   }
 
-  // Internal-only auth: require either the service role key or our internal secret.
-  // The telegram-webhook calls this with the service role key (already in its env).
+  // Auth: accept either the service role key (server-to-server, e.g. telegram-webhook)
+  // OR a logged-in user JWT (frontend Quick Add). For user JWTs we require user_id == sub.
   const authHeader = req.headers.get("authorization") ?? "";
   const internal = req.headers.get("x-internal-secret") ?? "";
-  const tokenOk =
+  const isService =
     (SERVICE_ROLE && authHeader === `Bearer ${SERVICE_ROLE}`) ||
     (SERVICE_ROLE && internal === SERVICE_ROLE);
-  if (!tokenOk) {
-    return new Response(JSON.stringify({ success: false, error: "unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
 
   let body: any;
   try { body = await req.json(); } catch {
     return jsonResp(400, { success: false, error: "invalid_json" });
   }
 
-  const userId: string | undefined = body?.user_id;
+  let userId: string | undefined = body?.user_id;
+
+  if (!isService) {
+    if (!authHeader.startsWith("Bearer ")) {
+      return jsonResp(401, { success: false, error: "unauthorized" });
+    }
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const token = authHeader.replace("Bearer ", "");
+    const { data, error } = await userClient.auth.getClaims(token);
+    if (error || !data?.claims?.sub) {
+      return jsonResp(401, { success: false, error: "unauthorized" });
+    }
+    const sub = data.claims.sub as string;
+    if (userId && userId !== sub) {
+      return jsonResp(403, { success: false, error: "forbidden" });
+    }
+    userId = sub;
+  }
   const text: string | undefined = body?.text;
   const tz: string = body?.timezone || "Europe/London";
   const nowIso: string = body?.current_time_iso || new Date().toISOString();
