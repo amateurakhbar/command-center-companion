@@ -368,7 +368,7 @@ async function resolveShortId(
 
 type ListItem = { index: number; task_id: string; short_id: string; title: string };
 type StoredList = {
-  source: "today" | "overdue";
+  source: "today" | "overdue" | "remaining";
   created_at: string;
   expires_at: string;
   items: ListItem[];
@@ -377,7 +377,7 @@ type StoredList = {
 async function saveTaskList(
   supabase: any,
   userId: string,
-  source: "today" | "overdue",
+  source: "today" | "overdue" | "remaining",
   tasks: { id: string; title: string }[],
 ) {
   const now = Date.now();
