@@ -19,12 +19,14 @@ const HELP_CONNECTED = [
   "/add Follow up with Hamza tomorrow #followup !high",
   "/today",
   "/overdue",
+  "/remaining   (or /pending, /all)",
   "/done 1   (or /done TASK_ID)",
   "/delay 1 tomorrow   (or /delay TASK_ID 1h)",
   "/waiting 1",
   "/reopen 1",
+  "/calendar_export   (or /ical)",
   "",
-  "After /today or /overdue you can also reply without the slash:",
+  "After /today, /overdue or /remaining you can also reply without the slash:",
   "done 1",
   "delay 2 tomorrow",
   "waiting 1",
@@ -61,6 +63,69 @@ async function tgSend(chatId: number, text: string) {
   } catch (e) {
     console.error("tgSend error", e);
   }
+}
+
+async function tgSendDocument(chatId: number, filename: string, content: string, mime = "text/calendar"): Promise<boolean> {
+  if (!BOT_TOKEN) return false;
+  try {
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set("document", new Blob([content], { type: mime }), filename);
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
+      method: "POST",
+      body: form,
+    });
+    return r.ok;
+  } catch (e) {
+    console.error("tgSendDocument error", e);
+    return false;
+  }
+}
+
+/* ---------------- ICS builder ---------------- */
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+function toIcsUtc(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
+}
+function escIcs(s: string) { return s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;"); }
+function buildIcs(tasks: any[], tz: string): string {
+  const dtstamp = toIcsUtc(new Date().toISOString());
+  const events = tasks
+    .filter((t) => t.due_at && !t.deleted_at && t.status !== "done" && t.status !== "killed")
+    .map((t) => {
+      const start = new Date(t.due_at);
+      const end = new Date(start.getTime() + 30 * 60_000);
+      const desc = escIcs([
+        `Priority: ${t.priority}`,
+        `Category: ${t.category}`,
+        `Status: ${t.status}`,
+        `Source: ${t.source}`,
+        t.description ? `\n${t.description}` : "",
+      ].filter(Boolean).join("\n"));
+      return [
+        "BEGIN:VEVENT",
+        `UID:${t.id}@ab-command-center`,
+        `DTSTAMP:${dtstamp}`,
+        `DTSTART:${toIcsUtc(start.toISOString())}`,
+        `DTEND:${toIcsUtc(end.toISOString())}`,
+        `SUMMARY:${escIcs(t.title)}`,
+        `DESCRIPTION:${desc}`,
+        `LAST-MODIFIED:${toIcsUtc(t.updated_at ?? t.due_at)}`,
+        "END:VEVENT",
+      ].join("\r\n");
+    });
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//AB Command Center//Remaining//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:AB Command Center — Remaining",
+    `X-WR-TIMEZONE:${tz}`,
+    ...events,
+    "END:VCALENDAR",
+  ].join("\r\n");
 }
 
 /* ---------------- Parsing helpers (no AI) ---------------- */
@@ -366,7 +431,7 @@ async function resolveShortId(
 
 type ListItem = { index: number; task_id: string; short_id: string; title: string };
 type StoredList = {
-  source: "today" | "overdue";
+  source: "today" | "overdue" | "remaining";
   created_at: string;
   expires_at: string;
   items: ListItem[];
@@ -375,7 +440,7 @@ type StoredList = {
 async function saveTaskList(
   supabase: any,
   userId: string,
-  source: "today" | "overdue",
+  source: "today" | "overdue" | "remaining",
   tasks: { id: string; title: string }[],
 ) {
   const now = Date.now();
@@ -1003,6 +1068,129 @@ Deno.serve(async (req) => {
       }).eq("id", r.task.id).eq("user_id", userId);
       if (error) { console.error(error); await tgSend(chatId, "Could not update that task."); return new Response("ok", { status: 200, headers: corsHeaders }); }
       await tgSend(chatId, `Reopened: ${r.task.title}`);
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    /* ---------- /remaining /pending /all ---------- */
+    if (command === "/remaining" || command === "/pending" || command === "/all") {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("id, title, priority, due_at, status, category, created_at, updated_at")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .not("status", "in", "(done,killed)");
+      if (error) {
+        console.error("/remaining error", error);
+        await tgSend(chatId, "Could not load remaining tasks.");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const all = data ?? [];
+      if (all.length === 0) {
+        await tgSend(chatId, "No remaining tasks. You're clear.");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const nowMs = Date.now();
+      const PRI = (p: string) => (p === "high" ? 0 : p === "medium" ? 1 : 2);
+      const isDueTodayLocal = (iso: string | null) => {
+        if (!iso) return false;
+        const d = new Date(iso);
+        const now = nowInTz(tz);
+        const dParts = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+        const get = (t: string) => dParts.find((p) => p.type === t)?.value;
+        return parseInt(get("year")!) === now.year && parseInt(get("month")!) === now.month && parseInt(get("day")!) === now.day;
+      };
+      const waiting = all.filter((t: any) => t.status === "waiting");
+      const active = all.filter((t: any) => t.status !== "waiting");
+      const overdue = active.filter((t: any) => t.due_at && new Date(t.due_at).getTime() < nowMs);
+      const dueToday = active.filter((t: any) => t.due_at && new Date(t.due_at).getTime() >= nowMs && isDueTodayLocal(t.due_at));
+      const upcoming = active.filter((t: any) => t.due_at && new Date(t.due_at).getTime() >= nowMs && !isDueTodayLocal(t.due_at));
+      const noDue = active.filter((t: any) => !t.due_at);
+
+      overdue.sort((a: any, b: any) => PRI(a.priority) - PRI(b.priority) || new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
+      dueToday.sort((a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime() || PRI(a.priority) - PRI(b.priority));
+      upcoming.sort((a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime() || PRI(a.priority) - PRI(b.priority));
+      noDue.sort((a: any, b: any) => PRI(a.priority) - PRI(b.priority) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      waiting.sort((a: any, b: any) => {
+        const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity;
+        const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity;
+        if (ad !== bd) return ad - bd;
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+
+      const ordered: { section: string; t: any }[] = [];
+      const pushSec = (label: string, arr: any[]) => arr.forEach((t) => ordered.push({ section: label, t }));
+      pushSec("Overdue", overdue);
+      pushSec("Due Today", dueToday);
+      pushSec("Upcoming", upcoming);
+      pushSec("No Due Date", noDue);
+      pushSec("Waiting", waiting);
+
+      const totalCount = ordered.length;
+      const cap = 30;
+      const shown = ordered.slice(0, cap);
+      const PRIO_LABEL = (p: string) => p === "high" ? "High" : p === "medium" ? "Med" : "Low";
+      const lines: string[] = ["Remaining tasks", ""];
+      let lastSection = "";
+      let idx = 0;
+      for (const { section, t } of shown) {
+        if (section !== lastSection) {
+          if (lastSection) lines.push("");
+          lines.push(section);
+          lastSection = section;
+        }
+        idx++;
+        const due = t.due_at ? fmtDue(t.due_at, tz) : "no due date";
+        const statusTag = t.status === "waiting" ? ", Waiting" : "";
+        lines.push(`${idx}. ${shortId(t.id)} ${t.title}, ${PRIO_LABEL(t.priority)}, ${due}${statusTag}`);
+      }
+      if (totalCount > cap) {
+        lines.push("", `Showing ${cap} of ${totalCount} pending tasks. Open the dashboard for the full list.`);
+      }
+      lines.push("", "Reply: done 1   delay 2 tomorrow   waiting 3   reopen 8");
+
+      await saveTaskList(supabase, userId, "remaining", shown.map(({ t }) => ({ id: t.id, title: t.title })));
+
+      const text = lines.join("\n");
+      const CHUNK = 3800;
+      if (text.length <= CHUNK) {
+        await tgSend(chatId, text);
+      } else {
+        let buf = "";
+        for (const line of lines) {
+          if (buf.length + line.length + 1 > CHUNK) {
+            await tgSend(chatId, buf);
+            buf = "";
+          }
+          buf += (buf ? "\n" : "") + line;
+        }
+        if (buf) await tgSend(chatId, buf);
+      }
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    /* ---------- /calendar_export /ical ---------- */
+    if (command === "/calendar_export" || command === "/ical") {
+      const { data: tasksForIcs, error: icsErr } = await supabase
+        .from("tasks")
+        .select("id, title, description, priority, category, status, source, due_at, updated_at, deleted_at")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .not("status", "in", "(done,killed)")
+        .not("due_at", "is", null);
+      if (icsErr) {
+        console.error("/ical query error", icsErr);
+        await tgSend(chatId, "Could not generate calendar export.");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      if (!tasksForIcs || tasksForIcs.length === 0) {
+        await tgSend(chatId, "No remaining dated tasks to export.");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const ics = buildIcs(tasksForIcs, tz);
+      const ok = await tgSendDocument(chatId, "ab-command-center-remaining-tasks.ics", ics);
+      if (!ok) {
+        await tgSend(chatId, "Calendar export is ready in the dashboard. Open Calendar and click Export Apple Calendar .ics.");
+      }
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 

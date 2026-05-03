@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.ai-parser]
 verify_jwt = false
+
+[functions.email-calendar-export]
+verify_jwt = false
