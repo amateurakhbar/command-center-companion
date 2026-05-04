@@ -54,6 +54,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+  // Probe mode: report whether the email export is configured without sending.
+  let body: any = {};
+  try { body = await req.clone().json(); } catch { /* no body */ }
+  if (body?.probe) return json(200, { configured: !!RESEND_API_KEY });
+
   if (!RESEND_API_KEY) return json(200, { error: "not_configured" });
 
   const auth = req.headers.get("authorization") ?? "";
