@@ -97,14 +97,25 @@ export default function CalendarPage() {
             {dated.length} dated · {unscheduled.length} unscheduled · {grouped.overdue.length} overdue
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={exportIcs}>
-            <Download className="h-4 w-4 mr-1.5" /> Export .ics
-          </Button>
-          <Button variant="outline" size="sm" onClick={emailIcs} disabled={emailing}>
-            {emailing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Mail className="h-4 w-4 mr-1.5" />}
-            Email .ics
-          </Button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={exportIcs}>
+              <Download className="h-4 w-4 mr-1.5" /> Export .ics
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={emailIcs}
+              disabled={emailing || emailConfigured === false}
+              title={emailConfigured === false ? "Email export not configured" : undefined}
+            >
+              {emailing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Mail className="h-4 w-4 mr-1.5" />}
+              Email .ics
+            </Button>
+          </div>
+          {emailConfigured === false && (
+            <p className="text-[10px] text-muted-foreground">Email export not configured — download instead.</p>
+          )}
         </div>
       </header>
 
