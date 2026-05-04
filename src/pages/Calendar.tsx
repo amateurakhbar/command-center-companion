@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calendar as CalendarIcon, Loader2, Download, Mail, AlertTriangle } from "lucide-react";
 import { useTasks } from "@/hooks/useTasks";
 import { TaskRow } from "@/lib/tasks";
@@ -41,6 +41,16 @@ export default function CalendarPage() {
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
   const [killTask, setKillTask] = useState<TaskRow | null>(null);
   const [emailing, setEmailing] = useState(false);
+  const [emailConfigured, setEmailConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    supabase.functions
+      .invoke("email-calendar-export", { body: { probe: true } })
+      .then(({ data }) => { if (active) setEmailConfigured(!!data?.configured); })
+      .catch(() => { if (active) setEmailConfigured(false); });
+    return () => { active = false; };
+  }, []);
 
   const remaining = useMemo(() => tasks.filter(isRemaining), [tasks]);
   const dated = remaining.filter((t) => t.due_at);
