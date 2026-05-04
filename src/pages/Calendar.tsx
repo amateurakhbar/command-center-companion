@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calendar as CalendarIcon, Loader2, Download, Mail, AlertTriangle } from "lucide-react";
 import { useTasks } from "@/hooks/useTasks";
 import { TaskRow } from "@/lib/tasks";
@@ -41,6 +41,16 @@ export default function CalendarPage() {
   const [breakDownTask, setBreakDownTask] = useState<TaskRow | null>(null);
   const [killTask, setKillTask] = useState<TaskRow | null>(null);
   const [emailing, setEmailing] = useState(false);
+  const [emailConfigured, setEmailConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    supabase.functions
+      .invoke("email-calendar-export", { body: { probe: true } })
+      .then(({ data }) => { if (active) setEmailConfigured(!!data?.configured); })
+      .catch(() => { if (active) setEmailConfigured(false); });
+    return () => { active = false; };
+  }, []);
 
   const remaining = useMemo(() => tasks.filter(isRemaining), [tasks]);
   const dated = remaining.filter((t) => t.due_at);
@@ -87,14 +97,25 @@ export default function CalendarPage() {
             {dated.length} dated · {unscheduled.length} unscheduled · {grouped.overdue.length} overdue
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={exportIcs}>
-            <Download className="h-4 w-4 mr-1.5" /> Export .ics
-          </Button>
-          <Button variant="outline" size="sm" onClick={emailIcs} disabled={emailing}>
-            {emailing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Mail className="h-4 w-4 mr-1.5" />}
-            Email .ics
-          </Button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={exportIcs}>
+              <Download className="h-4 w-4 mr-1.5" /> Export .ics
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={emailIcs}
+              disabled={emailing || emailConfigured === false}
+              title={emailConfigured === false ? "Email export not configured" : undefined}
+            >
+              {emailing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Mail className="h-4 w-4 mr-1.5" />}
+              Email .ics
+            </Button>
+          </div>
+          {emailConfigured === false && (
+            <p className="text-[10px] text-muted-foreground">Email export not configured — download instead.</p>
+          )}
         </div>
       </header>
 
