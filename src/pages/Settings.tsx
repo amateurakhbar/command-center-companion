@@ -480,3 +480,85 @@ function AutomationCard() {
     </Card>
   );
 }
+
+function DailyBriefCard() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [enabled, setEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [recipient, setRecipient] = useState<string | null>(null);
+  const [providerOk, setProviderOk] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle()
+      .then(({ data }) => {
+        const prefs = (data?.preferences as any) ?? {};
+        setEnabled(prefs.daily_email_brief_enabled !== false);
+        setLoading(false);
+      });
+    // Probe configuration via a dry-run-ish call: hit the brief with a HEAD-style test.
+    // Simpler: just attempt invoke with test+force=false and parse error.
+    supabase.functions.invoke("daily-evening-brief", { body: { test: true, force: false, probe: true } })
+      .then(({ data, error }) => {
+        if (error) { setProviderOk(false); return; }
+        const ok = data && (data as any).success !== false;
+        setProviderOk(!!ok || (data as any)?.duplicate_skipped === true);
+        setRecipient((data as any)?.recipient ?? null);
+      })
+      .catch(() => setProviderOk(false));
+  }, [user]);
+
+  const toggle = async (next: boolean) => {
+    if (!user) return;
+    setSaving(true);
+    setEnabled(next);
+    const { data: existing } = await supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle();
+    const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+    (prefs as any).daily_email_brief_enabled = next;
+    const { error } = await supabase.from("settings").upsert([{ user_id: user.id, preferences: prefs as any }], { onConflict: "user_id" });
+    setSaving(false);
+    if (error) { setEnabled(!next); toast.error(error.message); }
+    else toast.success(next ? "Daily brief enabled" : "Daily brief disabled");
+  };
+
+  const sendTest = async () => {
+    setTesting(true);
+    const { data, error } = await supabase.functions.invoke("daily-evening-brief", { body: { test: true, force: true } });
+    setTesting(false);
+    if (error) return toast.error(error.message);
+    const d: any = data;
+    if (d?.success) toast.success(`Test brief sent to ${d.recipient} (${d.counts?.total ?? 0} tasks)`);
+    else toast.error(d?.error || "Failed to send test brief");
+  };
+
+  return (
+    <Card className="p-6 bg-surface-1 space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle>Daily email brief</SectionTitle>
+        {providerOk === null ? null : providerOk ? (
+          <span className="text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">configured</span>
+        ) : (
+          <span className="text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">not configured</span>
+        )}
+      </div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Enable daily brief</div>
+          <p className="text-xs text-muted-foreground max-w-md">
+            Sends an evening email with grouped pending tasks and an Apple Calendar invite for the night execution block (10:00 PM – 3:00 AM Pakistan time). Scheduled at 5:00 PM Pakistan time.
+          </p>
+          {recipient && <p className="text-xs text-muted-foreground">Recipient: <span className="font-mono">{recipient}</span></p>}
+        </div>
+        <Switch checked={enabled} disabled={loading || saving} onCheckedChange={toggle} />
+      </div>
+      <div>
+        <Button variant="outline" size="sm" onClick={sendTest} disabled={testing || providerOk === false}>
+          {testing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Send test brief now
+        </Button>
+      </div>
+    </Card>
+  );
+}
