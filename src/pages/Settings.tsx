@@ -151,6 +151,9 @@ export default function Settings() {
         </Button>
       </div>
 
+      {/* Daily email brief */}
+      <DailyBriefCard />
+
       {/* Automation */}
       <AutomationCard />
 
