@@ -1135,7 +1135,88 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /calendar_export /ical ---------- */
+    /* ---------- /draft <number|short_id> ---------- */
+    if (command === "/draft") {
+      const id = argTokens[0];
+      if (!id) { await tgSend(chatId, "Send /draft 1 (after /today) or /draft TASK_ID."); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      if (!LOVABLE_API_KEY) {
+        await tgSend(chatId, "AI drafting is not configured.");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const t = r.task;
+      const sys = "You are a concise executive assistant. Draft a short, professional message or email body for the user's task. 4-8 lines max. No subject line, no salutation placeholders, no signature.";
+      const userPrompt = `Task: ${t.title}\n${t.description ? `Notes: ${t.description}\n` : ""}Category: ${t.category}\nPriority: ${t.priority}\n\nDraft the message now.`;
+      try {
+        const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+          }),
+        });
+        if (!aiRes.ok) {
+          await tgSend(chatId, "Could not generate draft right now. Try again later.");
+          return new Response("ok", { status: 200, headers: corsHeaders });
+        }
+        const aiData = await aiRes.json();
+        const draft = aiData?.choices?.[0]?.message?.content?.trim();
+        if (!draft) {
+          await tgSend(chatId, "AI returned an empty draft. Try again.");
+          return new Response("ok", { status: 200, headers: corsHeaders });
+        }
+        await tgSend(chatId, `Draft for: ${t.title}\n\n${draft}`);
+      } catch (e) {
+        console.error("draft ai error", e);
+        await tgSend(chatId, "Could not generate draft right now.");
+      }
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    /* ---------- /break <number|short_id> Smaller task title ---------- */
+    if (command === "/break") {
+      const id = argTokens[0];
+      const subtitle = argTokens.slice(1).join(" ").trim();
+      if (!id || !subtitle) {
+        await tgSend(chatId, "Send /break 1 Smaller task title  (or /break TASK_ID Smaller task title).");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const parent = r.task;
+      const { data: child, error } = await supabase.from("tasks").insert({
+        user_id: userId, title: subtitle.slice(0, 200),
+        category: parent.category, priority: parent.priority, status: "to_do", source: "telegram",
+        parent_task_id: parent.id, related_person_id: parent.related_person_id, related_job_id: parent.related_job_id,
+      }).select("id, title").single();
+      if (error || !child) { console.error(error); await tgSend(chatId, "Could not create subtask."); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      await tgSend(chatId, `Subtask added under "${parent.title}":\n• ${child.title}\nID: ${shortId(child.id)}`);
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    /* ---------- /kill <number|short_id> because REASON ---------- */
+    if (command === "/kill") {
+      const id = argTokens[0];
+      let rest = argTokens.slice(1).join(" ").trim();
+      const m = rest.match(/^because\s+(.+)$/i);
+      const reason = m ? m[1].trim() : rest;
+      if (!id || !reason) {
+        await tgSend(chatId, "Send /kill 1 because REASON  (or /kill TASK_ID because REASON).");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const { error } = await supabase.from("tasks").update({
+        status: "killed", killed_at: new Date().toISOString(), killed_reason: reason.slice(0, 500),
+      }).eq("id", r.task.id).eq("user_id", userId);
+      if (error) { console.error(error); await tgSend(chatId, "Could not kill that task."); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      await tgSend(chatId, `Killed: ${r.task.title}\nReason: ${reason}`);
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+
     if (command === "/calendar_export" || command === "/ical") {
       const { data: tasksForIcs, error: icsErr } = await supabase
         .from("tasks")
