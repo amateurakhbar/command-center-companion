@@ -1,6 +1,8 @@
-// Telegram webhook receiver — Phase 2B: connection + task commands
-// Commands: /start, /help, /connect, /add, /today, /overdue, /done, /delay, /waiting, /reopen
+// Telegram webhook receiver — Phase 2B + 5: connection + task + drafting commands
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { buildIcsForTasks } from "../_shared/ics.ts";
+
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
