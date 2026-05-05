@@ -1,6 +1,8 @@
-// Telegram webhook receiver — Phase 2B: connection + task commands
-// Commands: /start, /help, /connect, /add, /today, /overdue, /done, /delay, /waiting, /reopen
+// Telegram webhook receiver — Phase 2B + 5: connection + task + drafting commands
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { buildIcsForTasks } from "../_shared/ics.ts";
+
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,6 +26,9 @@ const HELP_CONNECTED = [
   "/delay 1 tomorrow   (or /delay TASK_ID 1h)",
   "/waiting 1",
   "/reopen 1",
+  "/draft 1   (or /draft TASK_ID)   — AI draft for the task",
+  "/break 1 Smaller task title       — split task into a subtask",
+  "/kill 1 because REASON            — kill task with a reason",
   "/calendar_export   (or /ical)",
   "",
   "After /today, /overdue or /remaining you can also reply without the slash:",
@@ -31,6 +36,9 @@ const HELP_CONNECTED = [
   "delay 2 tomorrow",
   "waiting 1",
   "reopen 2",
+  "draft 1",
+  "break 1 Smaller task title",
+  "kill 1 because REASON",
   "",
   "You can also send tasks in plain English, e.g.:",
   "Follow up with Hamza tomorrow about Ektis",
@@ -82,50 +90,9 @@ async function tgSendDocument(chatId: number, filename: string, content: string,
   }
 }
 
-/* ---------------- ICS builder ---------------- */
-function pad2(n: number) { return String(n).padStart(2, "0"); }
-function toIcsUtc(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
-}
-function escIcs(s: string) { return s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;"); }
+/* ---------------- ICS builder (shared) ---------------- */
 function buildIcs(tasks: any[], tz: string): string {
-  const dtstamp = toIcsUtc(new Date().toISOString());
-  const events = tasks
-    .filter((t) => t.due_at && !t.deleted_at && t.status !== "done" && t.status !== "killed")
-    .map((t) => {
-      const start = new Date(t.due_at);
-      const end = new Date(start.getTime() + 30 * 60_000);
-      const desc = escIcs([
-        `Priority: ${t.priority}`,
-        `Category: ${t.category}`,
-        `Status: ${t.status}`,
-        `Source: ${t.source}`,
-        t.description ? `\n${t.description}` : "",
-      ].filter(Boolean).join("\n"));
-      return [
-        "BEGIN:VEVENT",
-        `UID:${t.id}@ab-command-center`,
-        `DTSTAMP:${dtstamp}`,
-        `DTSTART:${toIcsUtc(start.toISOString())}`,
-        `DTEND:${toIcsUtc(end.toISOString())}`,
-        `SUMMARY:${escIcs(t.title)}`,
-        `DESCRIPTION:${desc}`,
-        `LAST-MODIFIED:${toIcsUtc(t.updated_at ?? t.due_at)}`,
-        "END:VEVENT",
-      ].join("\r\n");
-    });
-  return [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//AB Command Center//Remaining//EN",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    "X-WR-CALNAME:AB Command Center — Remaining",
-    `X-WR-TIMEZONE:${tz}`,
-    ...events,
-    "END:VCALENDAR",
-  ].join("\r\n");
+  return buildIcsForTasks(tasks, { tz, calName: "AB Command Center — Remaining" });
 }
 
 /* ---------------- Parsing helpers (no AI) ---------------- */
@@ -725,7 +692,7 @@ Deno.serve(async (req) => {
   // Only triggered when there is no slash command AND the first arg is a number,
   // so we don't hijack normal chat.
   if (!command) {
-    const m = trimmed.match(/^(done|delay|waiting|reopen)\s+(\d+)(?:\s+(.+))?$/i);
+    const m = trimmed.match(/^(done|delay|waiting|reopen|draft|break|kill)\s+(\d+)(?:\s+(.+))?$/i);
     if (m) {
       command = `/${m[1].toLowerCase()}`;
       restAfterCmd = m[3] ? `${m[2]} ${m[3]}` : m[2];
@@ -1168,7 +1135,88 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200, headers: corsHeaders });
     }
 
-    /* ---------- /calendar_export /ical ---------- */
+    /* ---------- /draft <number|short_id> ---------- */
+    if (command === "/draft") {
+      const id = argTokens[0];
+      if (!id) { await tgSend(chatId, "Send /draft 1 (after /today) or /draft TASK_ID."); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      if (!LOVABLE_API_KEY) {
+        await tgSend(chatId, "AI drafting is not configured.");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const t = r.task;
+      const sys = "You are a concise executive assistant. Draft a short, professional message or email body for the user's task. 4-8 lines max. No subject line, no salutation placeholders, no signature.";
+      const userPrompt = `Task: ${t.title}\n${t.description ? `Notes: ${t.description}\n` : ""}Category: ${t.category}\nPriority: ${t.priority}\n\nDraft the message now.`;
+      try {
+        const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+          }),
+        });
+        if (!aiRes.ok) {
+          await tgSend(chatId, "Could not generate draft right now. Try again later.");
+          return new Response("ok", { status: 200, headers: corsHeaders });
+        }
+        const aiData = await aiRes.json();
+        const draft = aiData?.choices?.[0]?.message?.content?.trim();
+        if (!draft) {
+          await tgSend(chatId, "AI returned an empty draft. Try again.");
+          return new Response("ok", { status: 200, headers: corsHeaders });
+        }
+        await tgSend(chatId, `Draft for: ${t.title}\n\n${draft}`);
+      } catch (e) {
+        console.error("draft ai error", e);
+        await tgSend(chatId, "Could not generate draft right now.");
+      }
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    /* ---------- /break <number|short_id> Smaller task title ---------- */
+    if (command === "/break") {
+      const id = argTokens[0];
+      const subtitle = argTokens.slice(1).join(" ").trim();
+      if (!id || !subtitle) {
+        await tgSend(chatId, "Send /break 1 Smaller task title  (or /break TASK_ID Smaller task title).");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const parent = r.task;
+      const { data: child, error } = await supabase.from("tasks").insert({
+        user_id: userId, title: subtitle.slice(0, 200),
+        category: parent.category, priority: parent.priority, status: "to_do", source: "telegram",
+        parent_task_id: parent.id, related_person_id: parent.related_person_id, related_job_id: parent.related_job_id,
+      }).select("id, title").single();
+      if (error || !child) { console.error(error); await tgSend(chatId, "Could not create subtask."); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      await tgSend(chatId, `Subtask added under "${parent.title}":\n• ${child.title}\nID: ${shortId(child.id)}`);
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+    /* ---------- /kill <number|short_id> because REASON ---------- */
+    if (command === "/kill") {
+      const id = argTokens[0];
+      let rest = argTokens.slice(1).join(" ").trim();
+      const m = rest.match(/^because\s+(.+)$/i);
+      const reason = m ? m[1].trim() : rest;
+      if (!id || !reason) {
+        await tgSend(chatId, "Send /kill 1 because REASON  (or /kill TASK_ID because REASON).");
+        return new Response("ok", { status: 200, headers: corsHeaders });
+      }
+      const r = await resolveIdArg(supabase, userId, id);
+      if (r.error) { await tgSend(chatId, replyForResolveError(r.error, r.numberRequested)); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      const { error } = await supabase.from("tasks").update({
+        status: "killed", killed_at: new Date().toISOString(), killed_reason: reason.slice(0, 500),
+      }).eq("id", r.task.id).eq("user_id", userId);
+      if (error) { console.error(error); await tgSend(chatId, "Could not kill that task."); return new Response("ok", { status: 200, headers: corsHeaders }); }
+      await tgSend(chatId, `Killed: ${r.task.title}\nReason: ${reason}`);
+      return new Response("ok", { status: 200, headers: corsHeaders });
+    }
+
+
     if (command === "/calendar_export" || command === "/ical") {
       const { data: tasksForIcs, error: icsErr } = await supabase
         .from("tasks")

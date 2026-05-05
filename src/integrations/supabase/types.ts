@@ -118,6 +118,8 @@ export type Database = {
           delivery_status: string | null
           id: string
           kind: string | null
+          metadata: Json | null
+          nudge_key: string | null
           response: string | null
           response_at: string | null
           sent_at: string | null
@@ -128,6 +130,8 @@ export type Database = {
           delivery_status?: string | null
           id?: string
           kind?: string | null
+          metadata?: Json | null
+          nudge_key?: string | null
           response?: string | null
           response_at?: string | null
           sent_at?: string | null
@@ -138,6 +142,8 @@ export type Database = {
           delivery_status?: string | null
           id?: string
           kind?: string | null
+          metadata?: Json | null
+          nudge_key?: string | null
           response?: string | null
           response_at?: string | null
           sent_at?: string | null
