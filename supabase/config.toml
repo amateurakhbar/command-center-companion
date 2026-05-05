@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.email-calendar-export]
 verify_jwt = false
+
+[functions.daily-evening-brief]
+verify_jwt = false
+
+[functions.scheduled-nudges]
+verify_jwt = false
