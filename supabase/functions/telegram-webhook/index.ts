@@ -90,50 +90,9 @@ async function tgSendDocument(chatId: number, filename: string, content: string,
   }
 }
 
-/* ---------------- ICS builder ---------------- */
-function pad2(n: number) { return String(n).padStart(2, "0"); }
-function toIcsUtc(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
-}
-function escIcs(s: string) { return s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;"); }
+/* ---------------- ICS builder (shared) ---------------- */
 function buildIcs(tasks: any[], tz: string): string {
-  const dtstamp = toIcsUtc(new Date().toISOString());
-  const events = tasks
-    .filter((t) => t.due_at && !t.deleted_at && t.status !== "done" && t.status !== "killed")
-    .map((t) => {
-      const start = new Date(t.due_at);
-      const end = new Date(start.getTime() + 30 * 60_000);
-      const desc = escIcs([
-        `Priority: ${t.priority}`,
-        `Category: ${t.category}`,
-        `Status: ${t.status}`,
-        `Source: ${t.source}`,
-        t.description ? `\n${t.description}` : "",
-      ].filter(Boolean).join("\n"));
-      return [
-        "BEGIN:VEVENT",
-        `UID:${t.id}@ab-command-center`,
-        `DTSTAMP:${dtstamp}`,
-        `DTSTART:${toIcsUtc(start.toISOString())}`,
-        `DTEND:${toIcsUtc(end.toISOString())}`,
-        `SUMMARY:${escIcs(t.title)}`,
-        `DESCRIPTION:${desc}`,
-        `LAST-MODIFIED:${toIcsUtc(t.updated_at ?? t.due_at)}`,
-        "END:VEVENT",
-      ].join("\r\n");
-    });
-  return [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//AB Command Center//Remaining//EN",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    "X-WR-CALNAME:AB Command Center — Remaining",
-    `X-WR-TIMEZONE:${tz}`,
-    ...events,
-    "END:VCALENDAR",
-  ].join("\r\n");
+  return buildIcsForTasks(tasks, { tz, calName: "AB Command Center — Remaining" });
 }
 
 /* ---------------- Parsing helpers (no AI) ---------------- */
