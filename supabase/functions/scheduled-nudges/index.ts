@@ -16,6 +16,21 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 type NudgeType = "morning" | "midday" | "evening" | "overdue";
 const ALL_TYPES: NudgeType[] = ["morning", "midday", "evening", "overdue"];
 const WINDOW_MIN = 15; // ±15 minutes around scheduled times
+const LIST_TTL_MS = 30 * 60_000; // 30 minutes — match telegram-webhook
+
+const TOGGLE_KEYS: Record<NudgeType, string> = {
+  morning: "morning_brief_enabled",
+  midday: "midday_check_enabled",
+  evening: "evening_closeout_enabled",
+  overdue: "overdue_escalation_enabled",
+};
+
+const NUDGE_LIST_SOURCE: Record<NudgeType, string> = {
+  morning: "nudge_morning",
+  midday: "nudge_midday",
+  evening: "nudge_evening",
+  overdue: "nudge_overdue",
+};
 
 function jres(status: number, body: any) {
   return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -65,7 +80,13 @@ function isDueTodayLocal(iso: string, tz: string): boolean {
   return parseInt(get("year")!) === now.year && parseInt(get("month")!) === now.month && parseInt(get("day")!) === now.day;
 }
 
-function buildMessage(kind: NudgeType, tasks: any[], tz: string): string | null {
+function shortId(uuid: string): string {
+  return uuid.replace(/-/g, "").slice(0, 8);
+}
+
+type Task = { id: string; title: string; priority: string; due_at: string | null; status: string };
+
+function buildMessage(kind: NudgeType, tasks: Task[], tz: string): { text: string; numbered: Task[] } | null {
   const nowMs = Date.now();
   const active = tasks.filter(t => t.status !== "waiting");
   const overdue = active.filter(t => t.due_at && new Date(t.due_at).getTime() < nowMs);
@@ -78,50 +99,104 @@ function buildMessage(kind: NudgeType, tasks: any[], tz: string): string | null 
   if (kind === "morning") {
     if (today.length === 0 && overdue.length === 0) return null;
     const lines = ["Morning brief", ""];
+    const numbered: Task[] = [];
+    let i = 1;
     if (overdue.length) {
       lines.push(`Overdue (${overdue.length}):`);
-      overdue.slice(0, 5).forEach(t => lines.push(`• ${t.title}`));
+      overdue.slice(0, 5).forEach(t => { lines.push(`${i}. ${t.title}`); numbered.push(t); i++; });
       lines.push("");
     }
     if (today.length) {
       lines.push(`Today (${today.length}):`);
-      today.slice(0, 8).forEach(t => lines.push(`• ${fmtTime(t.due_at)} ${t.title}`));
+      today.slice(0, 8).forEach(t => { lines.push(`${i}. ${fmtTime(t.due_at!)} ${t.title}`); numbered.push(t); i++; });
     }
-    lines.push("", "Reply done 1 / delay 1 tomorrow / waiting 1 after /today.");
-    return lines.join("\n");
+    lines.push("", "Reply done 1 / delay 1 tomorrow / waiting 1 / draft 1.");
+    return { text: lines.join("\n"), numbered };
   }
   if (kind === "midday") {
     if (today.length === 0 && overdue.length === 0) return null;
     const lines = ["Midday check-in", ""];
-    if (overdue.length) lines.push(`${overdue.length} overdue.`);
-    if (today.length) lines.push(`${today.length} due today.`);
-    lines.push("", "Send /today to see your list.");
-    return lines.join("\n");
+    const numbered: Task[] = [];
+    let i = 1;
+    if (overdue.length) {
+      lines.push(`Overdue (${overdue.length}):`);
+      overdue.slice(0, 5).forEach(t => { lines.push(`${i}. ${t.title}`); numbered.push(t); i++; });
+      lines.push("");
+    }
+    if (today.length) {
+      lines.push(`Today (${today.length}):`);
+      today.slice(0, 8).forEach(t => { lines.push(`${i}. ${t.title}`); numbered.push(t); i++; });
+    }
+    lines.push("", "Reply done N / delay N tomorrow / draft N / break N title / kill N because reason.");
+    return { text: lines.join("\n"), numbered };
   }
   if (kind === "evening") {
+    const numbered: Task[] = [];
     const lines = ["Evening wrap-up", ""];
+    let i = 1;
     if (today.length) {
       lines.push(`Still due today (${today.length}):`);
-      today.slice(0, 8).forEach(t => lines.push(`• ${t.title}`));
+      today.slice(0, 8).forEach(t => { lines.push(`${i}. ${t.title}`); numbered.push(t); i++; });
     } else {
       lines.push("Nothing left for today.");
     }
-    if (overdue.length) lines.push("", `${overdue.length} overdue rolling forward.`);
-    return lines.join("\n");
+    if (overdue.length) {
+      lines.push("", `Overdue (${overdue.length}):`);
+      overdue.slice(0, 5).forEach(t => { lines.push(`${i}. ${t.title}`); numbered.push(t); i++; });
+    }
+    if (numbered.length === 0) return { text: lines.join("\n"), numbered };
+    lines.push("", "Reply done N / delay N tomorrow / draft N / break N title / kill N because reason.");
+    return { text: lines.join("\n"), numbered };
   }
   // overdue
   if (overdue.length === 0) return null;
+  const numbered: Task[] = [];
   const lines = [`Overdue (${overdue.length})`, ""];
-  overdue.slice(0, 8).forEach(t => lines.push(`• ${t.title}`));
-  lines.push("", "Send /overdue to manage them.");
-  return lines.join("\n");
+  overdue.slice(0, 8).forEach((t, idx) => { lines.push(`${idx + 1}. ${t.title}`); numbered.push(t); });
+  lines.push("", "Reply done N / delay N tomorrow / break N title / kill N because reason.");
+  return { text: lines.join("\n"), numbered };
 }
 
-async function processUser(supabase: any, profile: any, settings: any, opts: { test: boolean; force: boolean; forcedType: NudgeType | null }): Promise<any> {
+async function persistTaskList(supabase: any, userId: string, source: string, items: Task[]) {
+  if (!items.length) return;
+  const now = Date.now();
+  const stored = {
+    source,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + LIST_TTL_MS).toISOString(),
+    items: items.map((t, i) => ({
+      index: i + 1,
+      task_id: t.id,
+      short_id: shortId(t.id),
+      title: t.title,
+    })),
+  };
+  const { data: existing } = await supabase.from("settings").select("preferences").eq("user_id", userId).maybeSingle();
+  const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+  const newPrefs = { ...prefs, last_telegram_task_list: stored };
+  await supabase.from("settings").upsert({ user_id: userId, preferences: newPrefs }, { onConflict: "user_id" });
+}
+
+async function processUser(
+  supabase: any, profile: any, settings: any,
+  opts: { test: boolean; force: boolean; forcedType: NudgeType | null }
+): Promise<any> {
   const tz = profile.timezone || "Europe/London";
   const now = nowInTz(tz);
   const nowMin = now.hour * 60 + now.minute;
   const localDate = todayLocalDate(tz);
+  const prefs = (settings?.preferences as any) ?? {};
+
+  // Master toggle (default false). In test mode with force, allow bypass and report it.
+  const masterEnabled = prefs.telegram_nudges_enabled === true;
+  let bypassedMaster = false;
+  if (!masterEnabled) {
+    if (opts.test && opts.force) {
+      bypassedMaster = true;
+    } else {
+      return { user_id: profile.id, skipped: "telegram_nudges_disabled" };
+    }
+  }
 
   if (!opts.test && inQuietHours(nowMin, settings?.quiet_hours_start, settings?.quiet_hours_end)) {
     return { user_id: profile.id, skipped: "quiet_hours" };
@@ -143,11 +218,16 @@ async function processUser(supabase: any, profile: any, settings: any, opts: { t
     .eq("user_id", profile.id).is("deleted_at", null).not("status", "in", "(done,killed)");
 
   for (const kind of types) {
+    // Per-type toggle (default true). Bypassable in test+force.
+    const perKey = TOGGLE_KEYS[kind];
+    const perEnabled = prefs[perKey] !== false;
+    if (!perEnabled && !(opts.test && opts.force)) {
+      results.push({ kind, skipped: "type_disabled" }); continue;
+    }
     if (!opts.test && kind !== "overdue" && !inWindow(nowMin, targets[kind])) {
       results.push({ kind, skipped: "outside_window" }); continue;
     }
     if (!opts.test && kind === "overdue") {
-      // Send overdue nudge once per day, ~1h after morning_time
       const target = (targets.morning ?? 540) + 60;
       if (!inWindow(nowMin, target)) { results.push({ kind, skipped: "outside_window" }); continue; }
     }
@@ -158,26 +238,42 @@ async function processUser(supabase: any, profile: any, settings: any, opts: { t
     }
     if (!profile.telegram_chat_id) { results.push({ kind, skipped: "no_telegram" }); continue; }
 
-    const message = buildMessage(kind, tasks ?? [], tz);
-    if (!message) { results.push({ kind, skipped: "nothing_to_say" }); continue; }
+    const built = buildMessage(kind, (tasks ?? []) as Task[], tz);
+    if (!built) { results.push({ kind, skipped: "nothing_to_say" }); continue; }
 
     let delivered = false;
     if (!opts.test || opts.force) {
-      delivered = await tgSend(profile.telegram_chat_id, message);
+      delivered = await tgSend(profile.telegram_chat_id, built.text);
     } else {
-      delivered = true; // dry run report only
+      delivered = true; // dry-run report only
+    }
+
+    // Persist numbered task list so subsequent "done 1", "draft 1" etc. resolve to this nudge.
+    if (delivered && built.numbered.length) {
+      try { await persistTaskList(supabase, profile.id, NUDGE_LIST_SOURCE[kind], built.numbered); }
+      catch (e) { console.error("persistTaskList failed", e); }
     }
 
     await supabase.from("nudges").upsert({
       user_id: profile.id, kind, nudge_key: nudgeKey,
       sent_at: new Date().toISOString(),
       delivery_status: delivered ? "sent" : "failed",
-      metadata: { test: opts.test, force: opts.force, preview: message.slice(0, 200) },
+      metadata: {
+        test: opts.test, force: opts.force,
+        preview: built.text.slice(0, 200),
+        highlighted_task_id: built.numbered[0]?.id ?? null,
+        item_count: built.numbered.length,
+        list_source: NUDGE_LIST_SOURCE[kind],
+      },
     }, { onConflict: "user_id,nudge_key" });
 
-    results.push({ kind, delivered, preview: message });
+    results.push({ kind, delivered, item_count: built.numbered.length, preview: built.text });
   }
-  return { user_id: profile.id, results };
+  return {
+    user_id: profile.id,
+    test_mode_bypassed_nudge_toggle: bypassedMaster || undefined,
+    results,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -200,7 +296,7 @@ Deno.serve(async (req) => {
   const reports: any[] = [];
   for (const p of (profiles ?? [])) {
     const { data: s } = await supabase.from("settings")
-      .select("morning_time, midday_time, evening_time, quiet_hours_start, quiet_hours_end")
+      .select("preferences, morning_time, midday_time, evening_time, quiet_hours_start, quiet_hours_end")
       .eq("user_id", p.id).maybeSingle();
     reports.push(await processUser(supabase, p, s, { test, force, forcedType }));
   }
