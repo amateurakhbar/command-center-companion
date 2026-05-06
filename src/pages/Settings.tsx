@@ -421,41 +421,80 @@ function TelegramCard() {
   );
 }
 
+type NudgePrefs = {
+  ai_parser_enabled: boolean;
+  telegram_nudges_enabled: boolean;
+  morning_brief_enabled: boolean;
+  midday_check_enabled: boolean;
+  evening_closeout_enabled: boolean;
+  overdue_escalation_enabled: boolean;
+  draft_assistant_enabled: boolean;
+};
+
+const NUDGE_DEFAULTS: NudgePrefs = {
+  ai_parser_enabled: true,
+  telegram_nudges_enabled: false,
+  morning_brief_enabled: true,
+  midday_check_enabled: true,
+  evening_closeout_enabled: true,
+  overdue_escalation_enabled: true,
+  draft_assistant_enabled: true,
+};
+
 function AutomationCard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [aiEnabled, setAiEnabled] = useState(true);
+  const [prefs, setPrefs] = useState<NudgePrefs>(NUDGE_DEFAULTS);
 
   useEffect(() => {
     if (!user) return;
     supabase
       .from("settings").select("preferences").eq("user_id", user.id).maybeSingle()
       .then(({ data }) => {
-        const prefs = (data?.preferences as any) ?? {};
-        setAiEnabled(prefs.ai_parser_enabled !== false);
+        const p = (data?.preferences as any) ?? {};
+        setPrefs({
+          ai_parser_enabled: p.ai_parser_enabled !== false,
+          telegram_nudges_enabled: p.telegram_nudges_enabled === true,
+          morning_brief_enabled: p.morning_brief_enabled !== false,
+          midday_check_enabled: p.midday_check_enabled !== false,
+          evening_closeout_enabled: p.evening_closeout_enabled !== false,
+          overdue_escalation_enabled: p.overdue_escalation_enabled !== false,
+          draft_assistant_enabled: p.draft_assistant_enabled !== false,
+        });
         setLoading(false);
       });
   }, [user]);
 
-  const toggleAi = async (next: boolean) => {
+  const setKey = async (key: keyof NudgePrefs, next: boolean) => {
     if (!user) return;
     setSaving(true);
-    setAiEnabled(next);
+    const prev = prefs[key];
+    setPrefs(p => ({ ...p, [key]: next }));
     const { data: existing } = await supabase
       .from("settings").select("preferences").eq("user_id", user.id).maybeSingle();
-    const prefs = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
-    (prefs as any).ai_parser_enabled = next;
+    const merged = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+    (merged as any)[key] = next;
     const { error } = await supabase
-      .from("settings").upsert([{ user_id: user.id, preferences: prefs as any }], { onConflict: "user_id" });
+      .from("settings").upsert([{ user_id: user.id, preferences: merged as any }], { onConflict: "user_id" });
     setSaving(false);
     if (error) {
-      setAiEnabled(!next);
+      setPrefs(p => ({ ...p, [key]: prev }));
       toast.error(error.message);
     } else {
-      toast.success(next ? "AI parsing enabled" : "AI parsing disabled");
+      toast.success("Saved");
     }
   };
+
+  const Row = ({ k, label, desc, disabled }: { k: keyof NudgePrefs; label: string; desc?: string; disabled?: boolean }) => (
+    <div className="flex items-start justify-between gap-4">
+      <div className="space-y-1">
+        <div className="text-sm font-medium">{label}</div>
+        {desc && <p className="text-xs text-muted-foreground max-w-md">{desc}</p>}
+      </div>
+      <Switch checked={prefs[k]} disabled={loading || saving || disabled} onCheckedChange={(v) => setKey(k, v)} />
+    </div>
+  );
 
   return (
     <Card className="p-6 bg-surface-1 space-y-5">
@@ -465,21 +504,23 @@ function AutomationCard() {
           AI configured
         </span>
       </div>
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <div className="text-sm font-medium flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Natural language task capture
-          </div>
-          <p className="text-xs text-muted-foreground max-w-md">
-            Send Telegram messages in plain English (e.g. "Follow up with Hamza tomorrow about Ektis") and they'll be parsed into structured tasks. Slash commands like /add always bypass AI.
-          </p>
-        </div>
-        <Switch checked={aiEnabled} disabled={loading || saving} onCheckedChange={toggleAi} />
+      <Row k="ai_parser_enabled" label="Natural language task capture" desc="Send Telegram messages in plain English; slash commands always bypass AI." />
+      <div className="border-t border-border/40 pt-5 space-y-4">
+        <Row
+          k="telegram_nudges_enabled"
+          label="Telegram nudges"
+          desc="Master switch. When off, scheduled morning/midday/evening/overdue Telegram nudges are skipped."
+        />
+        <Row k="morning_brief_enabled" label="Morning brief" disabled={!prefs.telegram_nudges_enabled} />
+        <Row k="midday_check_enabled" label="Midday check" disabled={!prefs.telegram_nudges_enabled} />
+        <Row k="evening_closeout_enabled" label="Evening closeout" disabled={!prefs.telegram_nudges_enabled} />
+        <Row k="overdue_escalation_enabled" label="Overdue escalation" disabled={!prefs.telegram_nudges_enabled} />
+        <Row k="draft_assistant_enabled" label="Draft assistant (/draft)" />
       </div>
     </Card>
   );
 }
+
 
 function DailyBriefCard() {
   const { user } = useAuth();
