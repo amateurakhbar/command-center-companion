@@ -398,7 +398,7 @@ async function resolveShortId(
 
 type ListItem = { index: number; task_id: string; short_id: string; title: string };
 type StoredList = {
-  source: "today" | "overdue" | "remaining";
+  source: "today" | "overdue" | "remaining" | "nudge_morning" | "nudge_midday" | "nudge_evening" | "nudge_overdue";
   created_at: string;
   expires_at: string;
   items: ListItem[];
