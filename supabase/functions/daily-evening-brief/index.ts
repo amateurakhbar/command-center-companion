@@ -121,11 +121,16 @@ Deno.serve(async (req) => {
 
   const test = body?.test === true;
   const force = body?.force === true;
+  const probe = body?.probe === true;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
   if (!RESEND_API_KEY || !FROM_EMAIL) {
-    return jres(503, { success: false, error: "email_not_configured", missing: { RESEND_API_KEY: !RESEND_API_KEY, DAILY_BRIEF_FROM_EMAIL: !FROM_EMAIL } });
+    return jres(probe ? 200 : 503, {
+      success: false, configured: false, error: "email_not_configured",
+      sender: FROM_EMAIL || null,
+      missing: { RESEND_API_KEY: !RESEND_API_KEY, DAILY_BRIEF_FROM_EMAIL: !FROM_EMAIL },
+    });
   }
 
   const user = await resolveUser(supabase, body);
@@ -134,6 +139,15 @@ Deno.serve(async (req) => {
   }
   const recipient = body?.recipient_email || RECIPIENT_EMAIL || user.email;
   if (!recipient) return jres(400, { success: false, error: "No recipient email configured." });
+
+  // Probe mode: report configuration only, do not send.
+  if (probe) {
+    return jres(200, {
+      success: true, configured: true, probe: true,
+      recipient, sender: FROM_EMAIL,
+    });
+  }
+
 
   // Check daily_email_brief_enabled (default true if configured)
   const { data: settings } = await supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle();
