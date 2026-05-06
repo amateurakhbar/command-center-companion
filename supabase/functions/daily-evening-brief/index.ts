@@ -212,7 +212,22 @@ Deno.serve(async (req) => {
   });
   const sendBody = await sendRes.json().catch(() => ({}));
   if (!sendRes.ok) {
-    return jres(502, { success: false, error: "resend_error", status: sendRes.status, body: sendBody });
+    const errMsg = String((sendBody as any)?.message ?? (sendBody as any)?.error ?? "");
+    const isVerification =
+      sendRes.status === 403 ||
+      /verif|domain|sender|onboarding|allowed|test (mode|email)/i.test(errMsg);
+    const friendly = isVerification
+      ? "Resend rejected the email. onboarding@resend.dev can usually only send to the Resend account owner or verified recipient. Use the Resend account email or add a verified sending domain."
+      : `Resend error (${sendRes.status}).`;
+    return jres(502, {
+      success: false,
+      error: "resend_error",
+      reason: isVerification ? "sender_or_recipient_not_verified" : "resend_send_failed",
+      message: friendly,
+      status: sendRes.status,
+      sender: FROM_EMAIL, recipient,
+      body: sendBody,
+    });
   }
   const messageId = sendBody?.id ?? null;
 
