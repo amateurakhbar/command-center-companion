@@ -529,6 +529,7 @@ function DailyBriefCard() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [recipient, setRecipient] = useState<string | null>(null);
+  const [sender, setSender] = useState<string | null>(null);
   const [providerOk, setProviderOk] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -539,14 +540,13 @@ function DailyBriefCard() {
         setEnabled(prefs.daily_email_brief_enabled !== false);
         setLoading(false);
       });
-    // Probe configuration via a dry-run-ish call: hit the brief with a HEAD-style test.
-    // Simpler: just attempt invoke with test+force=false and parse error.
-    supabase.functions.invoke("daily-evening-brief", { body: { test: true, force: false, probe: true } })
+    supabase.functions.invoke("daily-evening-brief", { body: { probe: true } })
       .then(({ data, error }) => {
         if (error) { setProviderOk(false); return; }
-        const ok = data && (data as any).success !== false;
-        setProviderOk(!!ok || (data as any)?.duplicate_skipped === true);
-        setRecipient((data as any)?.recipient ?? null);
+        const d: any = data ?? {};
+        setProviderOk(d.configured === true);
+        setRecipient(d.recipient ?? null);
+        setSender(d.sender ?? null);
       })
       .catch(() => setProviderOk(false));
   }, [user]);
@@ -570,9 +570,16 @@ function DailyBriefCard() {
     setTesting(false);
     if (error) return toast.error(error.message);
     const d: any = data;
-    if (d?.success) toast.success(`Test brief sent to ${d.recipient} (${d.counts?.total ?? 0} tasks)`);
-    else toast.error(d?.error || "Failed to send test brief");
+    if (d?.success) {
+      toast.success(`Test brief sent to ${d.recipient} (${d.counts?.total ?? 0} tasks)`);
+    } else if (d?.reason === "sender_or_recipient_not_verified") {
+      toast.error(d.message, { duration: 10000 });
+    } else {
+      toast.error(d?.message || d?.error || "Failed to send test brief");
+    }
   };
+
+  const usingTestSender = (sender ?? "").includes("onboarding@resend.dev");
 
   return (
     <Card className="p-6 bg-surface-1 space-y-5">
@@ -591,6 +598,12 @@ function DailyBriefCard() {
             Sends an evening email with grouped pending tasks and an Apple Calendar invite for the night execution block (10:00 PM – 3:00 AM Pakistan time). Scheduled at 5:00 PM Pakistan time.
           </p>
           {recipient && <p className="text-xs text-muted-foreground">Recipient: <span className="font-mono">{recipient}</span></p>}
+          {sender && <p className="text-xs text-muted-foreground">Sender: <span className="font-mono">{sender}</span></p>}
+          {usingTestSender && (
+            <p className="text-xs text-amber-400/90 max-w-md">
+              Using Resend test sender. This may only send to the Resend account owner or a verified recipient. Add a custom domain later for production sending.
+            </p>
+          )}
         </div>
         <Switch checked={enabled} disabled={loading || saving} onCheckedChange={toggle} />
       </div>
@@ -603,3 +616,4 @@ function DailyBriefCard() {
     </Card>
   );
 }
+
