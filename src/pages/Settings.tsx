@@ -151,6 +151,17 @@ export default function Settings() {
         </Button>
       </div>
 
+      {/* Automation Health link */}
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="font-medium text-sm">Automation Health</div>
+            <div className="text-xs text-muted-foreground">View cron status, run email/.ics tests, and check Telegram nudges.</div>
+          </div>
+          <Button asChild variant="outline" size="sm"><a href="/automation-health">Open Automation Health</a></Button>
+        </CardContent>
+      </Card>
+
       {/* Daily email brief */}
       <DailyBriefCard />
 
