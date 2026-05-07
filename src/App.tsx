@@ -15,6 +15,7 @@ import Jobs from "@/pages/Jobs";
 import People from "@/pages/People";
 import Score from "@/pages/Score";
 import Settings from "@/pages/Settings";
+import AutomationHealth from "@/pages/AutomationHealth";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -39,6 +40,7 @@ const App = () => (
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/people" element={<People />} />
                 <Route path="/score" element={<Score />} />
+                <Route path="/automation-health" element={<AutomationHealth />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
             </Route>
