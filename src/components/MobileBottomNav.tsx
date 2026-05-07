@@ -10,6 +10,7 @@ import {
   Briefcase,
   Users,
   BarChart3,
+  Activity,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ const more = [
   { title: "Jobs", url: "/jobs", icon: Briefcase },
   { title: "People", url: "/people", icon: Users },
   { title: "Score", url: "/score", icon: BarChart3 },
+  { title: "Health", url: "/automation-health", icon: Activity },
   { title: "Settings", url: "/settings", icon: SettingsIcon },
 ];
 

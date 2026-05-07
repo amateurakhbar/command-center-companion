@@ -12,7 +12,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Sun, ListTodo, AlertTriangle, Inbox, Calendar, Briefcase, Users, BarChart3, Settings, LogOut } from "lucide-react";
+import { Sun, ListTodo, AlertTriangle, Inbox, Calendar, Briefcase, Users, BarChart3, Settings, LogOut, Activity } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const items = [
@@ -24,6 +24,7 @@ const items = [
   { title: "Jobs", url: "/jobs", icon: Briefcase },
   { title: "People", url: "/people", icon: Users },
   { title: "Score", url: "/score", icon: BarChart3 },
+  { title: "Health", url: "/automation-health", icon: Activity },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
