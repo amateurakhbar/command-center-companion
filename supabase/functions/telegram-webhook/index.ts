@@ -864,10 +864,14 @@ Deno.serve(async (req) => {
 
     // For non-/add commands, log raw_input now (so retries are detectable)
     if (command && command !== "/start" && command !== "/help") {
-      await supabase.from("raw_inputs").insert({
-        user_id: userId, source: "telegram",
-        content: text, parsed_json: rawParsed, parser_version: "telegram_text_v1",
-      });
+      try {
+        await supabase.from("raw_inputs").insert({
+          user_id: userId, source: "telegram",
+          content: text, parsed_json: rawParsed, parser_version: "telegram_text_v1",
+        });
+      } catch (e) {
+        console.error("raw_inputs insert (non-fatal)", e);
+      }
     }
 
     /* ---------- /today ---------- */
