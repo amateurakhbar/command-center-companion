@@ -700,6 +700,8 @@ Deno.serve(async (req) => {
   }
   const argTokens = restAfterCmd ? restAfterCmd.split(/\s+/) : [];
 
+  console.log("[tg-webhook] received", { command: command || "(none)", chatId, tgUserId, messageId });
+
   try {
     /* ---------- /connect (Phase 2A — preserved) ---------- */
     if (command === "/connect") {
