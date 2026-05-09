@@ -1333,6 +1333,7 @@ Deno.serve(async (req) => {
     return new Response("ok", { status: 200, headers: corsHeaders });
   } catch (e) {
     console.error("telegram-webhook error", e);
+    try { await tgSend(chatId, "Something went wrong handling that. Try /help."); } catch {}
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
 });
