@@ -72,14 +72,26 @@ export default function CalendarPage() {
     setEmailing(true);
     try {
       const { data, error } = await supabase.functions.invoke("email-calendar-export", { body: {} });
-      if (error) throw error;
-      if (data?.error === "not_configured") {
-        toast.error("Email export is not configured. Download the .ics file instead.");
-      } else {
+      if (error) {
+        toast.error("Email export could not reach the server. Download the .ics file instead.");
+        return;
+      }
+      if (data?.success) {
         toast.success("Email sent");
+        return;
+      }
+      const code = data?.error;
+      if (code === "not_configured") {
+        toast.error("Email export is not configured. Download the .ics file instead.");
+      } else if (code === "sender_or_recipient_not_verified") {
+        toast.error(data?.message ?? "Resend rejected the email. Verify a sending domain or recipient.");
+      } else if (code === "no_tasks") {
+        toast.info("No remaining dated tasks to export.");
+      } else {
+        toast.error(data?.message ?? "Email failed. Download the .ics file instead.");
       }
     } catch (e: any) {
-      toast.error(e.message ?? "Email failed. Download instead.");
+      toast.error("Email export could not reach the server. Download the .ics file instead.");
     } finally {
       setEmailing(false);
     }

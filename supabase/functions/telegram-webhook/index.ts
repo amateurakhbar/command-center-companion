@@ -700,6 +700,8 @@ Deno.serve(async (req) => {
   }
   const argTokens = restAfterCmd ? restAfterCmd.split(/\s+/) : [];
 
+  console.log("[tg-webhook] received", { command: command || "(none)", chatId, tgUserId, messageId });
+
   try {
     /* ---------- /connect (Phase 2A — preserved) ---------- */
     if (command === "/connect") {
@@ -862,10 +864,14 @@ Deno.serve(async (req) => {
 
     // For non-/add commands, log raw_input now (so retries are detectable)
     if (command && command !== "/start" && command !== "/help") {
-      await supabase.from("raw_inputs").insert({
-        user_id: userId, source: "telegram",
-        content: text, parsed_json: rawParsed, parser_version: "telegram_text_v1",
-      });
+      try {
+        await supabase.from("raw_inputs").insert({
+          user_id: userId, source: "telegram",
+          content: text, parsed_json: rawParsed, parser_version: "telegram_text_v1",
+        });
+      } catch (e) {
+        console.error("raw_inputs insert (non-fatal)", e);
+      }
     }
 
     /* ---------- /today ---------- */
@@ -1327,6 +1333,7 @@ Deno.serve(async (req) => {
     return new Response("ok", { status: 200, headers: corsHeaders });
   } catch (e) {
     console.error("telegram-webhook error", e);
+    try { await tgSend(chatId, "Something went wrong handling that. Try /help."); } catch {}
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
 });
