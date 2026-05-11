@@ -797,7 +797,7 @@ Deno.serve(async (req) => {
     }
 
     const userId = profile.id;
-    const tz = profile.timezone || "Europe/London";
+    const tz = normalizeTz(profile.timezone);
 
     /* ---------- Log raw_input for connected user ---------- */
     const rawParsed: Record<string, unknown> = {
