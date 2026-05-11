@@ -48,11 +48,12 @@ Deno.serve(async (req) => {
   let email: string | null = null;
   try {
     const userClient = createClient(SUPABASE_URL, ANON, { global: { headers: { Authorization: auth } } });
-    const { data: claims } = await userClient.auth.getClaims(auth.replace("Bearer ", ""));
-    userId = (claims?.claims?.sub as string) ?? null;
-    email = (claims?.claims?.email as string) ?? null;
+    const { data: userData, error: userErr } = await userClient.auth.getUser();
+    if (userErr) console.error("getUser error", userErr);
+    userId = userData?.user?.id ?? null;
+    email = userData?.user?.email ?? null;
   } catch (e) {
-    console.error("getClaims error", e);
+    console.error("auth resolve error", e);
   }
   if (!userId) return jres({ success: false, error: "unauthorized", message: "Sign in and try again." });
 

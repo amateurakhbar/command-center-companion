@@ -1,0 +1,1 @@
+UPDATE public.profiles SET timezone = 'Asia/Karachi' WHERE timezone = 'Karachi';
