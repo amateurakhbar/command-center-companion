@@ -132,8 +132,23 @@ const WEEKDAYS: Record<string, number> = {
   saturday: 6, sat: 6,
 };
 
+// Normalize possibly-malformed IANA timezones (e.g. "Karachi" -> "Asia/Karachi").
+function normalizeTz(tz: string | null | undefined): string {
+  const fallback = "Asia/Karachi";
+  if (!tz || typeof tz !== "string") return fallback;
+  const candidates = [tz, `Asia/${tz}`, `Europe/${tz}`, `America/${tz}`, `Africa/${tz}`, `Australia/${tz}`];
+  for (const c of candidates) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: c }).format(new Date());
+      return c;
+    } catch { /* try next */ }
+  }
+  return fallback;
+}
+
 // Get current Y/M/D/H/m in a target IANA timezone
-function nowInTz(tz: string) {
+function nowInTz(tzIn: string) {
+  const tz = normalizeTz(tzIn);
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     year: "numeric", month: "2-digit", day: "2-digit",
