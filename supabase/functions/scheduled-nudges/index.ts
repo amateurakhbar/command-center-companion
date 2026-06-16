@@ -187,6 +187,12 @@ async function processUser(
   const localDate = todayLocalDate(tz);
   const prefs = (settings?.preferences as any) ?? {};
 
+  // Global workflow kill-switch (default ON). Pauses all automation when off.
+  const automationEnabled = prefs.automation_enabled !== false;
+  if (!automationEnabled && !(opts.test && opts.force)) {
+    return { user_id: profile.id, skipped: "automation_disabled" };
+  }
+
   // Master toggle (default false). In test mode with force, allow bypass and report it.
   const masterEnabled = prefs.telegram_nudges_enabled === true;
   let bypassedMaster = false;

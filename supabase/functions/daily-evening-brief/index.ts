@@ -149,9 +149,15 @@ Deno.serve(async (req) => {
   }
 
 
-  // Check daily_email_brief_enabled (default true if configured)
+  // Global workflow kill-switch (default ON). Pauses all automation when off.
   const { data: settings } = await supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle();
   const prefs = (settings?.preferences as any) ?? {};
+  const automationEnabled = prefs.automation_enabled !== false;
+  if (!automationEnabled && !(test && force)) {
+    return jres(200, { success: false, skipped: true, reason: "automation_disabled" });
+  }
+
+  // Check daily_email_brief_enabled (default true if configured)
   const enabled = prefs.daily_email_brief_enabled !== false;
   if (!enabled && !test) {
     return jres(200, { success: false, skipped: true, reason: "daily_email_brief_disabled" });
