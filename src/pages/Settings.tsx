@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Trash2, LogOut, Loader2, Send, Copy, Check, Sparkles } from "lucide-react";
+import { Settings as SettingsIcon, Trash2, LogOut, Loader2, Send, Copy, Check, Sparkles, Power } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -93,6 +93,9 @@ export default function Settings() {
           </p>
         </div>
       </header>
+
+      {/* Master automation kill-switch */}
+      <MasterAutomationCard />
 
       {/* Profile */}
       <Card className="p-6 bg-surface-1 space-y-5">
@@ -532,6 +535,61 @@ function AutomationCard() {
   );
 }
 
+
+function MasterAutomationCard() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle()
+      .then(({ data }) => {
+        const p = (data?.preferences as any) ?? {};
+        setEnabled(p.automation_enabled !== false);
+        setLoading(false);
+      });
+  }, [user]);
+
+  const toggle = async (next: boolean) => {
+    if (!user) return;
+    setSaving(true);
+    const prev = enabled;
+    setEnabled(next);
+    const { data: existing } = await supabase.from("settings").select("preferences").eq("user_id", user.id).maybeSingle();
+    const merged = ((existing?.preferences as any) ?? {}) as Record<string, unknown>;
+    (merged as any).automation_enabled = next;
+    const { error } = await supabase.from("settings").upsert([{ user_id: user.id, preferences: merged as any }], { onConflict: "user_id" });
+    setSaving(false);
+    if (error) { setEnabled(prev); toast.error(error.message); return; }
+    toast.success(next ? "Automation ON — scheduled nudges and emails will run" : "Automation OFF — all scheduled nudges and emails paused");
+  };
+
+  return (
+    <Card className={`p-6 border-2 ${enabled ? "bg-emerald-500/5 border-emerald-500/30" : "bg-amber-500/5 border-amber-500/40"}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center border ${enabled ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-amber-500/10 border-amber-500/30 text-amber-400"}`}>
+            <Power className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm font-semibold flex items-center gap-2">
+              Workflow automation
+              <span className={`text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded border ${enabled ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}>
+                {enabled ? "ON" : "OFF"}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground max-w-md">
+              Master switch for the whole workflow. When OFF, all scheduled jobs are paused: Telegram morning/midday/evening/overdue nudges and the daily evening email brief. Manual use of the app, Telegram slash commands, and AI Quick Add are unaffected.
+            </p>
+          </div>
+        </div>
+        <Switch checked={enabled} disabled={loading || saving} onCheckedChange={toggle} />
+      </div>
+    </Card>
+  );
+}
 
 function DailyBriefCard() {
   const { user } = useAuth();
