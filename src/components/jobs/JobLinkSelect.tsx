@@ -29,7 +29,7 @@ export function JobLinkSelect({ value, onChange, disabled }: Props) {
         <SelectItem value={NONE}>No job</SelectItem>
         {jobs.map((j) => (
           <SelectItem key={j.id} value={j.id}>
-            {j.company} — {j.role_title}
+            {j.company} · {j.role_title}
           </SelectItem>
         ))}
       </SelectContent>

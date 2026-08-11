@@ -1,4 +1,4 @@
-// Telegram webhook receiver — Phase 2B + 5: connection + task + drafting commands
+// Telegram webhook receiver (Phase 2B + 5): connection + task + drafting commands
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildIcsForTasks } from "../_shared/ics.ts";
 
@@ -26,9 +26,9 @@ const HELP_CONNECTED = [
   "/delay 1 tomorrow   (or /delay TASK_ID 1h)",
   "/waiting 1",
   "/reopen 1",
-  "/draft 1   (or /draft TASK_ID)   — AI draft for the task",
-  "/break 1 Smaller task title       — split task into a subtask",
-  "/kill 1 because REASON            — kill task with a reason",
+  "/draft 1   (or /draft TASK_ID):     AI draft for the task",
+  "/break 1 Smaller task title:        split task into a subtask",
+  "/kill 1 because REASON:             kill task with a reason",
   "/calendar_export   (or /ical)",
   "",
   "After /today, /overdue or /remaining you can also reply without the slash:",
@@ -92,7 +92,7 @@ async function tgSendDocument(chatId: number, filename: string, content: string,
 
 /* ---------------- ICS builder (shared) ---------------- */
 function buildIcs(tasks: any[], tz: string): string {
-  return buildIcsForTasks(tasks, { tz, calName: "AB Command Center — Remaining" });
+  return buildIcsForTasks(tasks, { tz, calName: "AB Command Center: Remaining" });
 }
 
 /* ---------------- Parsing helpers (no AI) ---------------- */
@@ -718,7 +718,7 @@ Deno.serve(async (req) => {
   console.log("[tg-webhook] received", { command: command || "(none)", chatId, tgUserId, messageId });
 
   try {
-    /* ---------- /connect (Phase 2A — preserved) ---------- */
+    /* ---------- /connect (Phase 2A, preserved) ---------- */
     if (command === "/connect") {
       const code = (argTokens[0] ?? "").toUpperCase();
       if (!code) {

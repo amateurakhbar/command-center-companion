@@ -84,16 +84,16 @@ function buildHtml(groups: ReturnType<typeof groupTasks>, tz: string, localDate:
   ];
   const total = sections.reduce((s, [, a]) => s + a.length, 0);
 
-  const htmlParts = [`<h2 style="font-family:system-ui;margin:0 0 8px">Evening Brief — ${localDate}</h2>`,
+  const htmlParts = [`<h2 style="font-family:system-ui;margin:0 0 8px">Evening Brief: ${localDate}</h2>`,
     `<p style="font-family:system-ui;color:#666;margin:0 0 16px">${total} pending task${total === 1 ? "" : "s"} · Night execution block 22:00–03:00 ${tz}</p>`];
-  const textParts = [`Evening Brief — ${localDate}`, `${total} pending tasks`, ""];
+  const textParts = [`Evening Brief: ${localDate}`, `${total} pending tasks`, ""];
   for (const [label, arr] of sections) {
     if (!arr.length) continue;
     htmlParts.push(`<h3 style="font-family:system-ui;margin:16px 0 4px">${label} (${arr.length})</h3><ul style="font-family:system-ui;padding-left:18px;margin:0">`);
     textParts.push(`${label} (${arr.length})`);
     for (const t of arr) {
       const prio = t.priority === "high" ? "High" : t.priority === "medium" ? "Med" : "Low";
-      htmlParts.push(`<li style="margin:4px 0"><strong>${escapeHtml(t.title)}</strong> — ${prio}, ${fmtDue(t.due_at, tz)}</li>`);
+      htmlParts.push(`<li style="margin:4px 0"><strong>${escapeHtml(t.title)}</strong> · ${prio}, ${fmtDue(t.due_at, tz)}</li>`);
       textParts.push(`  - ${t.title} (${prio}, ${fmtDue(t.due_at, tz)})`);
     }
     htmlParts.push(`</ul>`);
@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       from: FROM_EMAIL,
       to: [recipient],
-      subject: `Evening Brief — ${localDate} (${counts.total} pending)`,
+      subject: `Evening Brief: ${localDate} (${counts.total} pending)`,
       html, text,
       attachments: [{
         filename: "tonight-execution-block.ics",

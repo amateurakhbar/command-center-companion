@@ -50,7 +50,7 @@ Supabase schema lives in `supabase/migrations`, edge functions in
 `supabase/functions`.
 
 > **Note on config:** the `VITE_`-prefixed Supabase values are publishable by
-> design — Vite inlines them into the client bundle, and the Supabase
+> design: Vite inlines them into the client bundle, and the Supabase
 > publishable key is protected by row-level security rather than secrecy. Access
 > control lives in RLS policies, not in hiding the key.
 

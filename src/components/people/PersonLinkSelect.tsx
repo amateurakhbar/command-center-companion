@@ -34,7 +34,7 @@ export function PersonLinkSelect({ value, onChange, disabled, filterByJobId }: P
         {list.map((p) => (
           <SelectItem key={p.id} value={p.id}>
             {p.name}
-            {p.company ? ` — ${p.company}` : ""}
+            {p.company ? ` · ${p.company}` : ""}
           </SelectItem>
         ))}
       </SelectContent>

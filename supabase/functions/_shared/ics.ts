@@ -65,7 +65,7 @@ export function buildIcsForTasks(tasks: IcsTask[], opts?: { tz?: string; calName
     `PRODID:${opts?.prodId ?? "-//AB Command Center//Remaining//EN"}`,
     "CALSCALE:GREGORIAN",
     `METHOD:${opts?.method ?? "PUBLISH"}`,
-    `X-WR-CALNAME:${opts?.calName ?? "AB Command Center — Remaining"}`,
+    `X-WR-CALNAME:${opts?.calName ?? "AB Command Center: Remaining"}`,
     opts?.tz ? `X-WR-TIMEZONE:${opts.tz}` : "",
     ...events,
     "END:VCALENDAR",

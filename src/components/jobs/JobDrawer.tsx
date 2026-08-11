@@ -237,7 +237,7 @@ export function JobDrawer({ mode, onClose }: Props) {
     if (!job) return;
     const title =
       job.next_action?.trim() ||
-      `Next step for ${job.company} — ${job.role_title}`;
+      `Next step for ${job.company} · ${job.role_title}`;
     setTaskMode({
       kind: "create",
       defaults: {

@@ -72,8 +72,8 @@ export function CloseJobDialog({ job, kind, onClose }: Props) {
             rows={3}
             placeholder={
               kind === "rejected"
-                ? "e.g. Rejected after screening — not enough domain experience."
-                : "e.g. Withdrew — comp gap, accepted other role."
+                ? "e.g. Rejected after screening: not enough domain experience."
+                : "e.g. Withdrew: comp gap, accepted other role."
             }
             autoFocus
           />

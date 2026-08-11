@@ -1,23 +1,23 @@
-# Stage 1: Telegram Connection Flow — Ready to Build
+# Stage 1: Telegram Connection Flow (Ready to Build)
 
 You've confirmed you revoked the leaked token via @BotFather and have a fresh one ready. On approval, I switch to Build mode and execute the steps below in order.
 
-## Step 1 — Open secure secrets form (immediate)
+## Step 1: Open secure secrets form (immediate)
 
 I'll trigger the secrets form for two values. They go straight into encrypted backend storage; never paste them in chat.
 
-- `TELEGRAM_BOT_TOKEN` — the **new** token from @BotFather (format: `1234567890:AA...`). Not the username.
-- `TELEGRAM_WEBHOOK_SECRET` — any random string. Suggested: `whk_7QJ4mP2nR8vK3xL9wT6yB1cF5sD0aZ` (or generate your own).
+- `TELEGRAM_BOT_TOKEN`: the **new** token from @BotFather (format: `1234567890:AA...`). Not the username.
+- `TELEGRAM_WEBHOOK_SECRET`: any random string. Suggested: `whk_7QJ4mP2nR8vK3xL9wT6yB1cF5sD0aZ` (or generate your own).
 
 I'll wait for you to submit the form before continuing.
 
-The bot username `ab_command_center_bot` is public info — I'll hardcode it in the Settings UI instructions, no secret needed.
+The bot username `ab_command_center_bot` is public info; I'll hardcode it in the Settings UI instructions, no secret needed.
 
-## Step 2 — Build the Edge Function
+## Step 2: Build the Edge Function
 
 Create `supabase/functions/telegram-webhook/index.ts`:
 
-- Public function (no JWT required — Telegram doesn't send one)
+- Public function (no JWT required; Telegram doesn't send one)
 - Verifies `X-Telegram-Bot-Api-Secret-Token` header matches `TELEGRAM_WEBHOOK_SECRET`; returns 401 on mismatch
 - Always returns 200 to Telegram (even on internal errors) so it doesn't retry-storm
 - Uses service role key for DB writes
@@ -27,7 +27,7 @@ Create `supabase/functions/telegram-webhook/index.ts`:
   - **`/connect CODE`** → looks up the code in `settings.preferences->telegram_link`, validates expiry, writes `telegram_user_id` + `telegram_chat_id` to that user's profile, clears the code, replies "Connected."
 - Replies via direct Bot API call to `https://api.telegram.org/bot<TOKEN>/sendMessage` (webhook architecture, not the connector's long-polling path)
 
-## Step 3 — Build Settings UI
+## Step 3: Build Settings UI
 
 Edit `src/pages/Settings.tsx` to add a **Telegram** card:
 
@@ -40,7 +40,7 @@ Edit `src/pages/Settings.tsx` to add a **Telegram** card:
 
 No bot token, webhook secret, or service role anywhere in the frontend.
 
-## Step 4 — Register the webhook with Telegram
+## Step 4: Register the webhook with Telegram
 
 After the function deploys, I'll register the webhook by calling Telegram's `setWebhook` once from a curl in the sandbox:
 
@@ -55,10 +55,10 @@ POST https://api.telegram.org/bot<TOKEN>/setWebhook
 
 I'll then call `getWebhookInfo` to confirm registration and report the result back to you.
 
-## Step 5 — Walk you through testing
+## Step 5: Walk you through testing
 
 1. In your app → Settings → Telegram → **Generate connection code** → copy code.
-2. Open Telegram → search **@ab_command_center_bot** → tap Start (sends `/start` — you should see the "generate a code" reply).
+2. Open Telegram → search **@ab_command_center_bot** → tap Start (sends `/start`; you should see the "generate a code" reply).
 3. Send `/connect <CODE>` → should reply "Connected."
 4. Send `/start` again → should reply "Connected. Send /help."
 5. Send `/help` → should list Stage 1 commands.
@@ -74,7 +74,7 @@ If anything fails I'll inspect Edge Function logs and fix.
 
 - **Create**: `supabase/functions/telegram-webhook/index.ts`
 - **Edit**: `src/pages/Settings.tsx` (add Telegram card)
-- **No DB migration** — schema already has the needed columns.
+- **No DB migration**: schema already has the needed columns.
 
 ## What I need from you now
 

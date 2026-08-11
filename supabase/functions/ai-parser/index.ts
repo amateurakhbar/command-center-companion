@@ -60,7 +60,7 @@ function buildSystemPrompt(tz: string, nowIso: string): string {
     "",
     "RULES:",
     "1. Output ONLY via the extract_tasks tool call. No prose.",
-    "2. A single message may contain multiple distinct tasks — split them.",
+    "2. A single message may contain multiple distinct tasks. Split them.",
     "3. due_at must be ISO timestamptz in the user's timezone offset, or null.",
     "4. 'tomorrow morning' = tomorrow 09:00 in user's tz.",
     "5. 'tonight' = today 20:00.",
@@ -72,7 +72,7 @@ function buildSystemPrompt(tz: string, nowIso: string): string {
     "11. If pronouns are ambiguous (him/her/them with no name), set needs_clarification=true and ask a single short clarification_question. Return tasks=[] in that case.",
     "12. If confidence < 0.5 for a task, set needs_clarification=true and ask one clarifying question.",
     "13. Extract person_name, company_name, job_title when mentioned (do not invent).",
-    "14. Do not create jobs or people records — that is downstream.",
+    "14. Do not create jobs or people records; that is downstream.",
   ].join("\n");
 }
 

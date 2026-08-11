@@ -16,7 +16,7 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 type NudgeType = "morning" | "midday" | "evening" | "overdue";
 const ALL_TYPES: NudgeType[] = ["morning", "midday", "evening", "overdue"];
 const WINDOW_MIN = 15; // ±15 minutes around scheduled times
-const LIST_TTL_MS = 30 * 60_000; // 30 minutes — match telegram-webhook
+const LIST_TTL_MS = 30 * 60_000; // 30 minutes (match telegram-webhook)
 
 const TOGGLE_KEYS: Record<NudgeType, string> = {
   morning: "morning_brief_enabled",

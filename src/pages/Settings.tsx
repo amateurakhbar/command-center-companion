@@ -563,7 +563,7 @@ function MasterAutomationCard() {
     const { error } = await supabase.from("settings").upsert([{ user_id: user.id, preferences: merged as any }], { onConflict: "user_id" });
     setSaving(false);
     if (error) { setEnabled(prev); toast.error(error.message); return; }
-    toast.success(next ? "Automation ON — scheduled nudges and emails will run" : "Automation OFF — all scheduled nudges and emails paused");
+    toast.success(next ? "Automation ON: scheduled nudges and emails will run" : "Automation OFF: all scheduled nudges and emails paused");
   };
 
   return (

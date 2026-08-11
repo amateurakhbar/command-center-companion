@@ -115,7 +115,7 @@ export default function AutomationHealth() {
         .not("status", "in", "(done,killed)").order("created_at", { ascending: false }).limit(1);
       if (tErr) throw new Error(tErr.message);
       if (!tasks || tasks.length === 0) return { success: false, error: "No active task available for draft test." };
-      // Reuse Lovable AI gateway directly via edge? We don't have a separate function — call ai-parser is unrelated.
+      // Reuse Lovable AI gateway directly via edge? We don't have a separate function; call ai-parser is unrelated.
       // Provide a soft check: confirm AI configured + return the task that would be drafted.
       return { success: true, task: tasks[0], note: "Run /draft 1 in Telegram to generate a real draft." };
     });
@@ -157,7 +157,7 @@ export default function AutomationHealth() {
         <Card>
           <CardHeader><CardTitle className="text-base">Connection</CardTitle></CardHeader>
           <CardContent className="text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span>{c.email ?? "—"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span>{c.email ?? "Not set"}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Timezone</span><span>{c.timezone}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Telegram connected</span><YesNo ok={c.telegram_connected} /></div>
           </CardContent>
@@ -167,8 +167,8 @@ export default function AutomationHealth() {
           <CardHeader><CardTitle className="text-base">Providers</CardTitle></CardHeader>
           <CardContent className="text-sm space-y-1">
             <div className="flex justify-between"><span className="text-muted-foreground">Resend</span><YesNo ok={p.resend?.configured} label={p.resend?.configured ? "Configured" : "Not configured"} /></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Sender</span><span className="truncate ml-2">{p.resend?.sender ?? "—"}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Recipient</span><span className="truncate ml-2">{p.resend?.recipient ?? "—"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Sender</span><span className="truncate ml-2">{p.resend?.sender ?? "Not set"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Recipient</span><span className="truncate ml-2">{p.resend?.recipient ?? "Not set"}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Lovable AI</span><YesNo ok={p.lovable_ai?.configured} /></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Telegram bot</span><YesNo ok={p.telegram_bot?.configured} /></div>
           </CardContent>
@@ -197,7 +197,7 @@ export default function AutomationHealth() {
               <div className="text-muted-foreground">
                 Status unavailable. Expected jobs:
                 <ul className="mt-1 list-disc ml-5">
-                  {data.expected_cron?.map((j: any) => <li key={j.name}><code>{j.name}</code> — {j.schedule}</li>)}
+                  {data.expected_cron?.map((j: any) => <li key={j.name}><code>{j.name}</code> · {j.schedule}</li>)}
                 </ul>
               </div>
             )}
@@ -263,7 +263,7 @@ export default function AutomationHealth() {
               <ul className="space-y-1.5">
                 {recent.daily_briefs.map((n: any) => (
                   <li key={n.id} className="flex flex-col border-b border-border/50 pb-1.5">
-                    <span>{new Date(n.sent_at).toLocaleString()} — <Badge variant="outline">{n.delivery_status ?? "?"}</Badge></span>
+                    <span>{new Date(n.sent_at).toLocaleString()} · <Badge variant="outline">{n.delivery_status ?? "?"}</Badge></span>
                     <span className="text-muted-foreground truncate">{n.nudge_key} · tasks={n.metadata?.counts?.total ?? "?"} · test={String(n.metadata?.test ?? false)}</span>
                   </li>
                 ))}
@@ -279,7 +279,7 @@ export default function AutomationHealth() {
               <ul className="space-y-1.5">
                 {recent.telegram_nudges.map((n: any) => (
                   <li key={n.id} className="flex flex-col border-b border-border/50 pb-1.5">
-                    <span>{new Date(n.sent_at).toLocaleString()} — <Badge variant="outline">{n.kind}</Badge> <Badge variant="outline">{n.delivery_status ?? "?"}</Badge></span>
+                    <span>{new Date(n.sent_at).toLocaleString()} · <Badge variant="outline">{n.kind}</Badge> <Badge variant="outline">{n.delivery_status ?? "?"}</Badge></span>
                     <span className="text-muted-foreground truncate">{n.nudge_key} · tasks={n.metadata?.task_count ?? n.metadata?.tasks ?? "?"} · test={String(n.metadata?.test ?? false)}</span>
                   </li>
                 ))}
@@ -296,7 +296,7 @@ export default function AutomationHealth() {
             <ul className="space-y-1.5">
               {recent.failures.map((n: any) => (
                 <li key={n.id} className="flex flex-col border-b border-border/50 pb-1.5">
-                  <span>{new Date(n.sent_at).toLocaleString()} — <Badge variant="outline">{n.kind}</Badge> <Badge variant="destructive">{n.delivery_status}</Badge></span>
+                  <span>{new Date(n.sent_at).toLocaleString()} · <Badge variant="outline">{n.kind}</Badge> <Badge variant="destructive">{n.delivery_status}</Badge></span>
                   <span className="text-muted-foreground truncate">{n.metadata?.error ?? n.metadata?.reason ?? n.nudge_key}</span>
                 </li>
               ))}

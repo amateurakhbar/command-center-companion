@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     return jres({ success: false, error: "no_tasks", message: "No remaining dated tasks to export." });
   }
 
-  const ics = buildIcsForTasks(tasks, { tz, calName: "AB Command Center — Remaining" });
+  const ics = buildIcsForTasks(tasks, { tz, calName: "AB Command Center: Remaining" });
   const b64 = btoa(unescape(encodeURIComponent(ics)));
 
   const r = await fetch("https://api.resend.com/emails", {

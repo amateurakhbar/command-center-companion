@@ -72,7 +72,7 @@ export function buildIcsForRemaining(tasks: TaskRow[], opts?: { tz?: string }): 
     "PRODID:-//AB Command Center//Remaining Tasks//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    `X-WR-CALNAME:AB Command Center — Remaining`,
+    `X-WR-CALNAME:AB Command Center: Remaining`,
     opts?.tz ? `X-WR-TIMEZONE:${opts.tz}` : "",
     ...events,
     "END:VCALENDAR",

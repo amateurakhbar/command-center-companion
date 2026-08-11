@@ -126,7 +126,7 @@ export default function CalendarPage() {
             </Button>
           </div>
           {emailConfigured === false && (
-            <p className="text-[10px] text-muted-foreground">Email export not configured — download instead.</p>
+            <p className="text-[10px] text-muted-foreground">Email export not configured. Download instead.</p>
           )}
         </div>
       </header>
